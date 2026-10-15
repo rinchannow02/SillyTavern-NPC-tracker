@@ -1,0 +1,127 @@
+/* SillyTavern-NPC-tracker Scoped Styles (.st-npc-*) */
+
+.st-npc-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.st-npc-settings {
+    margin-bottom: 12px;
+}
+
+.st-npc-section {
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.st-npc-stats-panel {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    gap: 8px;
+}
+
+.st-npc-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9em;
+}
+
+.st-npc-stat-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--SmartThemeBodyColor, #ccc);
+}
+
+.st-npc-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.st-npc-badge.success {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.4);
+}
+
+.st-npc-badge.info {
+    background: rgba(52, 152, 219, 0.2);
+    color: #3498db;
+    border: 1px solid rgba(52, 152, 219, 0.4);
+}
+
+.st-npc-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.st-npc-actions .menu_button {
+    cursor: pointer;
+    flex: 1;
+    min-width: 130px;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+}
+
+.st-npc-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.st-npc-empty-notice {
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.7;
+    text-align: center;
+    padding: 6px 0;
+}
+
+.st-npc-mini-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85em;
+    transition: background 0.2s ease;
+}
+
+.st-npc-mini-card:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.st-npc-mini-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.st-npc-mini-scope {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+}

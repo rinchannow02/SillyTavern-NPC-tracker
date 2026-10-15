@@ -1,0 +1,59 @@
+<div class="st-npc-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>NPC Tracker</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="st-npc-section">
+                <label class="checkbox_label" for="st_npc_enabled">
+                    <input id="st_npc_enabled" type="checkbox" class="checkbox" />
+                    <span>Enable NPC Tracker</span>
+                </label>
+            </div>
+
+            <div class="st-npc-section">
+                <label for="st_npc_default_scope">
+                    <span>Default Scope for New NPCs</span>
+                </label>
+                <select id="st_npc_default_scope" class="text_pole">
+                    <option value="chat">Chat (Default — Active conversation)</option>
+                    <option value="character">Character (Active character avatar)</option>
+                    <option value="persona">Persona (Active user persona)</option>
+                    <option value="global">Global (All chats)</option>
+                </select>
+            </div>
+
+            <div class="st-npc-section st-npc-stats-panel">
+                <div class="st-npc-stat-row">
+                    <span class="st-npc-stat-label"><i class="fa-solid fa-database"></i> Database Engine:</span>
+                    <span id="st_npc_db_status_badge" class="st-npc-badge success">SQLite (sql.js WASM)</span>
+                </div>
+                <div class="st-npc-stat-row">
+                    <span class="st-npc-stat-label"><i class="fa-solid fa-users"></i> Linked NPCs in Context:</span>
+                    <span id="st_npc_active_count" class="st-npc-badge info">0</span>
+                </div>
+            </div>
+
+            <div class="st-npc-section st-npc-actions">
+                <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_create_test" title="Create a Test NPC in the current scope">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Create Test NPC</span>
+                </button>
+                <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_export" title="Export NPC Tracker Database as JSON">
+                    <i class="fa-solid fa-file-export"></i>
+                    <span>Export DB JSON</span>
+                </button>
+                <label class="menu_button menu_button_icon" id="st_npc_btn_import_label" title="Import NPC Tracker Database from JSON">
+                    <i class="fa-solid fa-file-import"></i>
+                    <span>Import DB JSON</span>
+                    <input type="file" id="st_npc_import_file" accept=".json" style="display: none;" />
+                </label>
+            </div>
+
+            <div class="st-npc-section st-npc-list-container" id="st_npc_quick_list">
+                <!-- Dynamically populated NPC items -->
+            </div>
+        </div>
+    </div>
+</div>
