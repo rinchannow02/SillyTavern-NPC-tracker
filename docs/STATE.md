@@ -1,30 +1,30 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Active Milestone:** Milestone 1 — Extension Skeleton & SQLite Persistence Layer
-- **Required Working Branch:** `v1` (branched from `staging`)
+- **Active Milestone:** Milestone 2 — Multi-Scope Link Manager & Prompt Injector
+- **Required Working Branch:** `v2` (branched from `staging`)
 - **Base Integration Branch:** `staging`
 
 ## Milestone & Branch Matrix
 | Milestone | Branch | Status | Scope Summary |
 | :--- | :--- | :--- | :--- |
 | **Milestone 1** | `v1` | `COMPLETED` | `manifest.json`, `global.d.ts`, `index.js`, `style.css`, `src/contracts.js`, `src/db/sqlite-store.js` (`sql.js` + `localforage`), Extensions drawer UI with Test NPC & JSON export |
-| **Milestone 2** | `v2` | `READY` | Multi-Scope Link Manager (Chat/Character/Persona/Global), `setExtensionPrompt` prompt injector, `CHAT_CHANGED` auto-query |
-| **Milestone 3** | `v3` | `LOCKED` | Dynamic Block Editor UI, Custom Templates, `DOMPurify` sanitized rendering |
+| **Milestone 2** | `v2` | `COMPLETED` | Multi-Scope Link Manager (Chat/Character/Persona/Global), `setExtensionPrompt` prompt injector (`src/injection.js`), `CHAT_CHANGED` auto-query, prompt preview panel |
+| **Milestone 3** | `v3` | `READY` | Dynamic Block Editor UI, Custom Templates, `DOMPurify` sanitized rendering |
 | **Milestone 4** | `v4` | `LOCKED` | LLM Chat Scanner & `ConnectionManagerRequestService` integration |
 
-## Milestone 1 Task Checklist (`v1`)
-- [x] Initialize Git repository with `main`, `staging`, and checkout `v1` from `staging`
-- [x] Set remote `origin` to `https://github.com/rinchannow02/SillyTavern-NPC-tracker.git`
-- [x] Scaffold Antigravity Agent Control Plane (`GEMINI.md`, `docs/SPEC.md`, `docs/STATE.md`, `.agents/rules/*`, `.agents/workflows/*`, subfolder `GEMINI.md` lane contracts)
-- [x] Create `manifest.json` and `global.d.ts` (with `/// <reference path="../../../global.d.ts" />` and window types)
-- [x] Implement `src/contracts.js` defining shared JSDoc contracts (`NpcRecord`, `NpcBlock`, `NpcScopeLink`, `ScannerConfig`) and lane interfaces
-- [x] Implement `src/db/sqlite-store.js` (`sql.js` WASM loader from CDN, schema init, debounced `localforage` save, CRUD, scoping, JSON import/export)
-- [x] Implement `index.js` bootstrap, settings initialization, collapsible Extensions UI drawer in `#extensions_settings2`, and buttons for **Create Test NPC** and **Export DB JSON**
-- [x] Verified zero 404s and successful live activation in SillyTavern Docker instance at `http://127.0.0.1:8000` (console: `[NPC Tracker] Milestone 1 (v1) initialized successfully.`, `typeof window.ST_NPC_Tracker === 'object'`)
+## Milestone 2 Task Checklist (`v2`)
+- [x] Merge completed `v1` into `staging` and branch `v2` off `staging`
+- [x] Implement `src/injection.js` with `renderNpcSheet`, `formatActiveNpcsPrompt`, and `syncPromptInjection` calling `context.setExtensionPrompt('npc_tracker', ...)`
+- [x] Add scope linking helpers (`getNpcScopes`, `setNpcScopeStatus`) in `src/db/sqlite-store.js`
+- [x] Update `src/ui/settings.html` and `style.css` with Prompt Injection Preview, Depth/Position controls, and Sync button
+- [x] Wire lifecycle events in `index.js` (`CHAT_CHANGED`, `CHARACTER_PAGE_LOADED`) to auto-sync prompt injection
+- [x] Validate HTTP 200, JS syntax (`node --check`), and live prompt injection in SillyTavern Docker container (`http://127.0.0.1:8000`)
+- [x] Commit cleanly to branch `v2`
 
 ## Active Decisions & Constraints
 - Module Name: `npc_tracker`
+- Prompt Injection Identifier: `npc_tracker`
 - CSS Prefix: `st-npc-`
 - Storage Key in `localforage`: `st_npc_tracker_sqlite_db`
-- Coordinator-Only Files: `index.js`, `manifest.json`, `docs/STATE.md`, `src/contracts.js`
+- Default Injection Settings: `position = 1` (in-chat), `depth = 4`, `role = 0` (system)

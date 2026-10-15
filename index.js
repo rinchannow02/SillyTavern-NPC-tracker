@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (Milestone 1: Skeleton, Drawer UI, & SQLite Store)
+ * @description Entry point for SillyTavern-NPC-tracker (Milestone 2: Multi-Scope & Prompt Injection)
  */
 
 import {
@@ -11,17 +11,30 @@ import {
     getNpcById,
     linkNpcScope,
     unlinkNpcScope,
+    getNpcScopes,
+    setNpcScopeStatus,
     getActiveContextNpcs,
     queryAll,
     exportDatabaseToJson,
     importDatabaseFromJson,
 } from './src/db/sqlite-store.js';
 
+import {
+    syncPromptInjection,
+    clearPromptInjection,
+    getLastInjectedPrompt,
+    renderNpcSheet,
+    INJECTION_KEY,
+} from './src/injection.js';
+
 export const MODULE_NAME = 'npc_tracker';
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     defaultScope: 'chat', // 'chat' | 'character' | 'persona' | 'global'
+    injectionPosition: 1, // 1 = in-chat, 0 = system prompt
+    injectionDepth: 4,
+    injectionRole: 0, // 0 = system, 1 = user, 2 = assistant
     scanner: {
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
@@ -67,6 +80,22 @@ function updateDrawerStats() {
             countElement.textContent = String(activeNpcs.length);
         }
 
+        const badgeElement = document.getElementById('st_npc_injection_status_badge');
+        if (badgeElement) {
+            const context = SillyTavern.getContext();
+            const settings = context.extensionSettings?.[MODULE_NAME] || {};
+            if (!settings.enabled) {
+                badgeElement.className = 'st-npc-badge warning';
+                badgeElement.textContent = 'Disabled';
+            } else if (activeNpcs.length === 0) {
+                badgeElement.className = 'st-npc-badge info';
+                badgeElement.textContent = 'Idle (0 in scope)';
+            } else {
+                badgeElement.className = 'st-npc-badge success';
+                badgeElement.textContent = `Active (${activeNpcs.length})`;
+            }
+        }
+
         const quickListContainer = $('#st_npc_quick_list');
         if (quickListContainer.length) {
             const { DOMPurify } = SillyTavern.libs;
@@ -86,21 +115,28 @@ function updateDrawerStats() {
                 quickListContainer.html(itemsHtml);
             }
         }
+
+        const previewText = document.getElementById('st_npc_preview_text');
+        if (previewText) {
+            const currentPrompt = getLastInjectedPrompt();
+            previewText.textContent = currentPrompt || '(No prompt injected — 0 active NPCs in scope)';
+        }
     } catch (err) {
         console.debug('[NPC Tracker] Could not update drawer stats:', err);
     }
 }
 
 /**
- * Event handler when active chat changes.
+ * Event handler when active chat or character changes.
  */
-function onChatChanged() {
+function onContextChanged() {
     try {
         const activeNpcs = getActiveContextNpcs();
-        console.debug(`[NPC Tracker] Chat changed. Loaded ${activeNpcs.length} linked NPC(s) for active context.`);
+        console.debug(`[NPC Tracker] Context changed. ${activeNpcs.length} linked NPC(s) in active scope.`);
+        syncPromptInjection();
         updateDrawerStats();
     } catch (err) {
-        console.error('[NPC Tracker] Error querying NPCs on chat change:', err);
+        console.error('[NPC Tracker] Error updating prompt on context change:', err);
     }
 }
 
@@ -147,6 +183,12 @@ async function renderSettingsDrawer(settings) {
         enabledCheckbox.off('change').on('change', () => {
             settings.enabled = enabledCheckbox.prop('checked');
             context.saveSettingsDebounced();
+            if (settings.enabled) {
+                syncPromptInjection(settings);
+            } else {
+                clearPromptInjection();
+            }
+            updateDrawerStats();
         });
 
         // Bind Default Scope dropdown
@@ -155,6 +197,24 @@ async function renderSettingsDrawer(settings) {
         defaultScopeSelect.off('change').on('change', () => {
             settings.defaultScope = String(defaultScopeSelect.val());
             context.saveSettingsDebounced();
+        });
+
+        // Bind Injection Depth input
+        const depthInput = $('#st_npc_injection_depth');
+        depthInput.val(settings.injectionDepth ?? 4);
+        depthInput.off('change').on('change', () => {
+            settings.injectionDepth = parseInt(String(depthInput.val()), 10) || 4;
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
+        });
+
+        // Bind Injection Position select
+        const positionSelect = $('#st_npc_injection_position');
+        positionSelect.val(String(settings.injectionPosition ?? 1));
+        positionSelect.off('change').on('change', () => {
+            settings.injectionPosition = parseInt(String(positionSelect.val()), 10) || 1;
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
         });
 
         // Bind Create Test NPC button
@@ -180,16 +240,18 @@ async function renderSettingsDrawer(settings) {
                         aliases: `Traveler, Wanderer_${randomNum}`,
                         blocks: [
                             { id: 'appearance', label: 'Appearance', type: 'text', value: 'Dressed in travel-stained travelling cloaks.' },
-                            { id: 'personality', label: 'Personality', type: 'text', value: 'Observant, cautious, speak in soft whispers.' },
+                            { id: 'personality', label: 'Personality', type: 'text', value: 'Observant, cautious, speaks in soft whispers.' },
                             { id: 'relationship', label: 'Relationship', type: 'text', value: 'Recently met at the crossroads tavern.' },
                         ],
                     },
                     [{ scope_type: scopeType, target_id: targetId, relationship_summary: 'Met during testing' }]
                 );
 
+                syncPromptInjection(settings);
                 updateDrawerStats();
+
                 if (window.toastr) {
-                    window.toastr.success(`Created Test NPC #${randomNum} (ID: ${testNpcId.slice(0, 8)})`);
+                    window.toastr.success(`Created Test NPC #${randomNum} & injected into prompt!`);
                 }
                 console.log(`[NPC Tracker] Created Test NPC ${testNpcId}`);
             } catch (err) {
@@ -198,6 +260,30 @@ async function renderSettingsDrawer(settings) {
                     window.toastr.error('Failed to create test NPC');
                 }
             }
+        });
+
+        // Bind Sync Prompt button
+        $('#st_npc_btn_sync_prompt').off('click').on('click', () => {
+            try {
+                const promptText = syncPromptInjection(settings);
+                updateDrawerStats();
+                if (window.toastr) {
+                    window.toastr.success(`Prompt synchronized (${promptText ? 'Injected' : 'Empty'}).`);
+                }
+            } catch (err) {
+                console.error('[NPC Tracker] Manual sync failed:', err);
+                if (window.toastr) {
+                    window.toastr.error('Failed to sync prompt');
+                }
+            }
+        });
+
+        // Bind Preview Prompt toggle
+        $('#st_npc_btn_preview_prompt').off('click').on('click', () => {
+            const previewPanel = $('#st_npc_preview_panel');
+            previewPanel.slideToggle(150, () => {
+                updateDrawerStats();
+            });
         });
 
         // Bind Export JSON button
@@ -233,6 +319,7 @@ async function renderSettingsDrawer(settings) {
             try {
                 const text = await file.text();
                 const result = await importDatabaseFromJson(text);
+                syncPromptInjection(settings);
                 updateDrawerStats();
                 if (window.toastr) {
                     window.toastr.success(`Imported ${result.npcsImported} NPCs and ${result.linksImported} links.`);
@@ -265,7 +352,7 @@ jQuery(async () => {
         const extensionBaseUrl = new URL('.', import.meta.url).href;
         const db = await initDatabase(extensionBaseUrl);
 
-        // Expose debug & console verification API for Milestone 1
+        // Expose debug & console verification API
         window.ST_NPC_Tracker = {
             db,
             settings,
@@ -275,22 +362,36 @@ jQuery(async () => {
             getNpcById,
             linkNpcScope,
             unlinkNpcScope,
+            getNpcScopes,
+            setNpcScopeStatus,
             getActiveContextNpcs,
             queryAll,
             exportJson: exportDatabaseToJson,
             importJson: importDatabaseFromJson,
+            syncPromptInjection: () => syncPromptInjection(settings),
+            clearPromptInjection,
+            getLastInjectedPrompt,
+            renderNpcSheet,
             updateDrawerStats,
         };
 
         // Wire Extensions UI Drawer into SillyTavern
         await renderSettingsDrawer(settings);
 
+        // Perform initial prompt synchronization
+        syncPromptInjection(settings);
+
         // Wire SillyTavern lifecycle events
-        if (context.eventSource && context.event_types?.CHAT_CHANGED) {
-            context.eventSource.on(context.event_types.CHAT_CHANGED, onChatChanged);
+        if (context.eventSource) {
+            if (context.event_types?.CHAT_CHANGED) {
+                context.eventSource.on(context.event_types.CHAT_CHANGED, onContextChanged);
+            }
+            if (context.event_types?.CHARACTER_PAGE_LOADED) {
+                context.eventSource.on(context.event_types.CHARACTER_PAGE_LOADED, onContextChanged);
+            }
         }
 
-        console.log('[NPC Tracker] Milestone 1 (v1) initialized successfully.');
+        console.log('[NPC Tracker] Milestone 2 (v2) initialized successfully.');
     } catch (err) {
         console.error('[NPC Tracker] Initialization failed:', err);
     }

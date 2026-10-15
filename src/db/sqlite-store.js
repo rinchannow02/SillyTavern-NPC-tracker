@@ -337,6 +337,27 @@ export function unlinkNpcScope(npcId, scopeType, targetId) {
 }
 
 /**
+ * Retrieves all scopes linked to an NPC (active or inactive).
+ * @param {string} npcId
+ * @returns {Array<Object>}
+ */
+export function getNpcScopes(npcId) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    return queryAll('SELECT * FROM npc_links WHERE npc_id = ? ORDER BY created_at ASC', [npcId]);
+}
+
+/**
+ * Toggles or updates the active status of a scope link.
+ * @param {number} linkId
+ * @param {number|boolean} isActive
+ */
+export function setNpcScopeStatus(linkId, isActive) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    db.run('UPDATE npc_links SET is_active = ? WHERE id = ?', [isActive ? 1 : 0, linkId]);
+    scheduleDatabaseSave();
+}
+
+/**
  * Retrieves all NPCs linked to the currently active Chat, Character, Persona, or Global scope.
  * @returns {Array<Object>}
  */
