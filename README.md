@@ -74,11 +74,20 @@ NPC Tracker provides a focused middle ground: a dedicated manager that records w
 ## ⚙️ Recommended Setup & Best Practices
 
 ### 1. Dedicated Connection Profile for the Scanner
-For the best speed and lowest token consumption, set up a separate Connection Profile in SillyTavern specifically for extraction tools:
-- **Fast / Lightweight Models:** Models like `GLM-5.2`, `GLM-5.3-Flash`, `Claude 3.5 Haiku`, or `GPT-4o-mini` excel at structured JSON extraction.
-- **Reasoning / Thinking Models:** If using reasoning models (such as GLM Flash or DeepSeek R1), ensure:
-  - **Reasoning Effort** is set to `low` / `none` (or disabled) in the model's preset, **or**
-  - **Max Output Tokens** in the scanner settings is set sufficiently high (`3000`–`4000`+) so the internal reasoning process doesn't exhaust the token budget before the JSON payload is generated.
+For the best speed, lowest latency, and zero token waste, set up a separate Connection Profile in SillyTavern specifically for the scanner:
+
+> **TL;DR Model Recommendations:**
+> - **Cloud APIs:**
+>   - **Gemini 1.5 / 2.0 Flash:** Ultra-fast, near-zero cost, and a massive context window for reading deep chat histories.
+>   - **Claude 3.5 Haiku:** Best-in-class character nuance, relationship detection, and zero conversational fluff.
+>   - **GPT-4o-mini:** Rock-solid JSON schema adherence at low latency.
+> - **Local / Self-Hosted (Ollama / LM Studio / KoboldCpp):**
+>   - **Qwen 2.5 (7B / 14B Instruct):** The gold standard for open-weight structured JSON and entity extraction.
+>   - **Phi-4-mini (3.8B) / Llama 3.2 (3B):** Extremely lightweight; runs effortlessly on laptops and low-VRAM setups.
+> - **⚠️ Thinking / Reasoning Models (`DeepSeek R1`, `GLM-Flash`, `Qwen-Thinking`):**
+>   - **Disable reasoning effort** (`off` / `none`) in the model's preset whenever possible. Reasoning models spend 1,000–3,000 tokens on internal monologue before writing any JSON.
+>   - If reasoning cannot be disabled, increase **Max Output Tokens** in the scanner settings to `4000+` so the reasoning chain does not exhaust the token budget before outputting the JSON payload (`finish_reason: length`).
+> - **Recommended Sampler Preset:** Set **Temperature to `0.1`–`0.2`** and **Frequency Penalty to `0.0`** for deterministic, schema-compliant output.
 
 ### 2. Complementary Extensions
 - [SillyTavern-Extension-NPCNames](https://github.com/elana-voss/SillyTavern-Extension-NPCNames): Helps keep NPC names unique and creative, preventing the LLM from constantly reusing generic names like "Tanaka" or "Marcus."
