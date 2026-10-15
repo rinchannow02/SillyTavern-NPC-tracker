@@ -4,7 +4,7 @@ A lightweight, focused in-browser NPC database and dynamic prompt injection exte
 
 Do you love having recurring secondary characters in your stories? Tired of tracking them manually through sprawling World Info lorebooks? Don't want the clunkiness of full group chats or bloated character cards?
 
-**NPC Tracker** is designed to do one job and do it well: keep track of your Non-Player Characters, store their details in a fast local SQLite database, and dynamically inject them into your prompt only when they are relevant to the scene.
+**NPC Tracker** is designed to do one job and do it well: keep track of your Non-Player Characters, store their details in a fast local JSON store, and dynamically inject them into your prompt only when they are relevant to the scene.
 
 ---
 
@@ -22,8 +22,9 @@ Do you love having recurring secondary characters in your stories? Tired of trac
 
 ## ✨ Features
 
-- **Robust In-Browser SQLite Database:** Runs on pure client-side WebAssembly (`sql.js`) and persists automatically to IndexedDB via `localforage`. No Node.js server dependencies or external databases required.
+- **Fast In-Browser JSON Storage:** Lightweight client-side storage that persists automatically to IndexedDB via `localforage`. Zero external dependencies, no WebAssembly runtime, and no Node.js server dependencies required.
 - **Multi-Scope Scoping:** Link NPCs to an active **Chat**, **Character**, **User Persona**, or **Global** scope so characters only appear in the stories they belong to.
+- **Per-Chat Ignore:** Tick "Ignore this chat" to switch off NPC injection and automatic scans in one chat without disabling the extension. The flag is saved in the chat's metadata.
 - **Dynamic Sheet Editor:**
   - **Modular Block Mode:** Reorderable, customizable attribute blocks (Appearance, Personality, Relationships, or custom details).
   - **Freeform Template Mode:** Full Markdown and Handlebars support (`{{name}}`, `{{group}}`, `{{location}}`, `{{appearance}}`, etc.) for complete formatting control.

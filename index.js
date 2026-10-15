@@ -15,7 +15,7 @@ import {
     setNpcScopeStatus,
     getNpcGroups,
     getActiveContextNpcs,
-    queryAll,
+    resolveScopeTarget,
     exportDatabaseToJson,
     importDatabaseFromJson,
 } from './src/db/sqlite-store.js';
@@ -26,6 +26,8 @@ import {
     getLastInjectedPrompt,
     renderNpcSheet,
     INJECTION_KEY,
+    IGNORE_CHAT_KEY,
+    isChatIgnored,
 } from './src/injection.js';
 
 import {
@@ -63,7 +65,7 @@ const DEFAULT_SETTINGS = Object.freeze({
         settingAwareFilter: false,
         customPrompt: '',
     },
-    defaultTemplate: `### NPC: {{name}}\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}\n- **Relationship:** {{relationship}}`,
+    injectionTemplate: '[Active NPCs in Context:\n{{npcs}}\n]',
 });
 
 /**
@@ -105,6 +107,9 @@ function updateDrawerStats() {
             if (!settings.enabled) {
                 badgeElement.className = 'st-npc-badge warning';
                 badgeElement.textContent = 'Disabled';
+            } else if (isChatIgnored()) {
+                badgeElement.className = 'st-npc-badge warning';
+                badgeElement.textContent = 'Ignored (this chat)';
             } else if (activeNpcs.length === 0) {
                 badgeElement.className = 'st-npc-badge info';
                 badgeElement.textContent = 'Idle (0 in scope)';
@@ -116,27 +121,38 @@ function updateDrawerStats() {
 
         const quickListContainer = $('#st_npc_quick_list');
         if (quickListContainer.length) {
-            const { DOMPurify } = SillyTavern.libs;
+            quickListContainer.empty();
             if (activeNpcs.length === 0) {
                 quickListContainer.html('<div class="st-npc-empty-notice">No NPCs linked to active context. Click "+ New NPC" to create one.</div>');
             } else {
-                const itemsHtml = activeNpcs.slice(0, 10).map((npc) => {
-                    const safeName = DOMPurify.sanitize(npc.name || 'Unnamed NPC');
-                    const safeScope = DOMPurify.sanitize(npc.scope_type || 'scope');
-                    const safeGroup = npc.group_name ? DOMPurify.sanitize(npc.group_name) : '';
-                    return `
-                        <div class="st-npc-mini-card" data-npc-id="${npc.id}" title="Click to edit NPC sheet">
-                            <span class="st-npc-mini-name">
-                                <i class="fa-solid fa-user"></i> ${safeName}
-                            </span>
-                            <div class="st-npc-mini-meta">
-                                ${safeGroup ? `<span class="st-npc-badge group"><i class="fa-solid fa-users"></i> ${safeGroup}</span>` : ''}
-                                <span class="st-npc-mini-scope">${safeScope}</span>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                quickListContainer.html(itemsHtml);
+                activeNpcs.slice(0, 10).forEach((npc) => {
+                    const card = $('<div>')
+                        .addClass('st-npc-mini-card')
+                        .attr('data-npc-id', npc.id)
+                        .attr('title', 'Click to edit NPC sheet');
+
+                    const nameSpan = $('<span>')
+                        .addClass('st-npc-mini-name')
+                        .append($('<i>').addClass('fa-solid fa-user'))
+                        .append(document.createTextNode(' ' + (npc.name || 'Unnamed NPC')));
+                    card.append(nameSpan);
+
+                    const metaDiv = $('<div>').addClass('st-npc-mini-meta');
+                    if (npc.group_name) {
+                        const groupSpan = $('<span>')
+                            .addClass('st-npc-badge group')
+                            .append($('<i>').addClass('fa-solid fa-users'))
+                            .append(document.createTextNode(' ' + npc.group_name));
+                        metaDiv.append(groupSpan);
+                    }
+                    const scopeSpan = $('<span>')
+                        .addClass('st-npc-mini-scope')
+                        .text(npc.scope_type || 'scope');
+                    metaDiv.append(scopeSpan);
+
+                    card.append(metaDiv);
+                    quickListContainer.append(card);
+                });
 
                 // Bind click on card to open Editor modal
                 quickListContainer.find('.st-npc-mini-card').on('click', function (e) {
@@ -168,6 +184,7 @@ function onContextChanged() {
         messageCounterSinceLastScan = 0;
         const activeNpcs = getActiveContextNpcs();
         console.debug(`[NPC Tracker] Context changed. ${activeNpcs.length} linked NPC(s) in active scope.`);
+        refreshIgnoreChatCheckbox();
         syncPromptInjection();
         updateDrawerStats();
     } catch (err) {
@@ -176,12 +193,29 @@ function onContextChanged() {
 }
 
 /**
+ * Reflects the current chat's ignore flag in the drawer checkbox (disabled when no chat is open).
+ */
+function refreshIgnoreChatCheckbox() {
+    const hasChat = Boolean(SillyTavern.getContext().chatId);
+    $('#st_npc_ignore_chat').prop('checked', hasChat && isChatIgnored()).prop('disabled', !hasChat);
+}
+
+/**
  * Event handler for automated scan triggers on new messages.
  */
 async function onMessageReceived() {
     const context = SillyTavern.getContext();
     const settings = context.extensionSettings?.[MODULE_NAME];
-    if (!settings || !settings.enabled || !settings.scanner || !settings.scanner.enabled) {
+    if (!settings || !settings.enabled || isChatIgnored()) {
+        return;
+    }
+
+    if (settings.scanner?.settingAwareFilter) {
+        syncPromptInjection(settings);
+        updateDrawerStats();
+    }
+
+    if (!settings.scanner || !settings.scanner.enabled) {
         return;
     }
 
@@ -204,18 +238,6 @@ async function onMessageReceived() {
                 console.error('[NPC Tracker] Automated message scan failed:', err);
             }
         }
-    } else if (triggerMode === 'on_keyword') {
-        // Quick keyword check on the last message
-        const chat = context.chat || [];
-        const lastMsg = chat[chat.length - 1]?.mes || '';
-        if (lastMsg) {
-            const activeNpcs = getActiveContextNpcs();
-            const filtered = evaluateSettingAwareTriggers(activeNpcs, 1);
-            if (filtered.length !== activeNpcs.length) {
-                syncPromptInjection(settings);
-                updateDrawerStats();
-            }
-        }
     }
 }
 
@@ -225,7 +247,7 @@ async function onMessageReceived() {
  */
 async function renderSettingsDrawer(settings) {
     const context = SillyTavern.getContext();
-    const settingsUrl = new URL('./src/ui/settings.html', import.meta.url).href + '?t=' + Date.now();
+    const settingsUrl = new URL('./src/ui/settings.html', import.meta.url).href;
 
     try {
         const response = await fetch(settingsUrl);
@@ -263,6 +285,21 @@ async function renderSettingsDrawer(settings) {
             updateDrawerStats();
         });
 
+        // Bind per-chat Ignore toggle (always reads the live chat, since chatMetadata is replaced on chat switch)
+        refreshIgnoreChatCheckbox();
+        $('#st_npc_ignore_chat').off('change').on('change', function () {
+            const ctx = SillyTavern.getContext();
+            if (!ctx.chatId) return;
+            if ($(this).prop('checked')) {
+                ctx.chatMetadata[IGNORE_CHAT_KEY] = true;
+            } else {
+                delete ctx.chatMetadata[IGNORE_CHAT_KEY];
+            }
+            ctx.saveMetadataDebounced();
+            syncPromptInjection(settings);
+            updateDrawerStats();
+        });
+
         // Bind Default Scope dropdown
         const defaultScopeSelect = $('#st_npc_default_scope');
         defaultScopeSelect.val(settings.defaultScope || 'chat');
@@ -275,7 +312,8 @@ async function renderSettingsDrawer(settings) {
         const depthInput = $('#st_npc_injection_depth');
         depthInput.val(settings.injectionDepth ?? 4);
         depthInput.off('change').on('change', () => {
-            settings.injectionDepth = parseInt(String(depthInput.val()), 10) || 4;
+            const n = parseInt(String(depthInput.val()), 10);
+            settings.injectionDepth = Number.isFinite(n) ? n : 4;
             context.saveSettingsDebounced();
             syncPromptInjection(settings);
         });
@@ -284,9 +322,41 @@ async function renderSettingsDrawer(settings) {
         const positionSelect = $('#st_npc_injection_position');
         positionSelect.val(String(settings.injectionPosition ?? 1));
         positionSelect.off('change').on('change', () => {
-            settings.injectionPosition = parseInt(String(positionSelect.val()), 10) || 1;
+            const n = parseInt(String(positionSelect.val()), 10);
+            settings.injectionPosition = Number.isFinite(n) ? n : 1;
             context.saveSettingsDebounced();
             syncPromptInjection(settings);
+        });
+
+        // Bind Custom Injection Prompt Format
+        const defaultInjectionTemplate = '[Active NPCs in Context:\n{{npcs}}\n]';
+        const injectionTemplateInput = $('#st_npc_injection_template');
+        injectionTemplateInput.val(settings.injectionTemplate ?? defaultInjectionTemplate);
+
+        let injectionTemplateTimer = null;
+        injectionTemplateInput.off('input change').on('input change', () => {
+            if (injectionTemplateTimer) clearTimeout(injectionTemplateTimer);
+            injectionTemplateTimer = setTimeout(() => {
+                settings.injectionTemplate = String(injectionTemplateInput.val() || '');
+                context.saveSettingsDebounced();
+                syncPromptInjection(settings);
+            }, 300);
+        });
+
+        $(document).off('click', '#st_npc_injection_template_toggle').on('click', '#st_npc_injection_template_toggle', () => {
+            const body = $('#st_npc_injection_template_body');
+            const chevron = $('#st_npc_injection_chevron');
+            body.slideToggle(150);
+            const isOpen = body.is(':visible');
+            chevron.css('transform', isOpen ? 'rotate(90deg)' : 'rotate(0deg)');
+        });
+
+        $(document).off('click', '#st_npc_btn_reset_injection_template').on('click', '#st_npc_btn_reset_injection_template', () => {
+            injectionTemplateInput.val(defaultInjectionTemplate);
+            settings.injectionTemplate = defaultInjectionTemplate;
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
+            if (window.toastr) window.toastr.info('Reset injection prompt format to default.');
         });
 
         // ==========================================
@@ -302,7 +372,7 @@ async function renderSettingsDrawer(settings) {
             profileSelect.empty();
             profileSelect.append('<option value="">Active SillyTavern API</option>');
             for (const p of profiles) {
-                profileSelect.append(`<option value="${p.id}">${p.name}</option>`);
+                profileSelect.append($('<option>').val(p.id).text(p.name));
             }
             if (currentVal) {
                 profileSelect.val(currentVal);
@@ -310,11 +380,8 @@ async function renderSettingsDrawer(settings) {
         }
 
         refreshProfilesDropdown();
-        setTimeout(refreshProfilesDropdown, 500);
-        setTimeout(refreshProfilesDropdown, 1500);
-        setTimeout(refreshProfilesDropdown, 3000);
 
-        profileSelect.off('focus mousedown').on('focus mousedown', refreshProfilesDropdown);
+        profileSelect.off('focus').on('focus', refreshProfilesDropdown);
         $(document).off('click', '#st_npc_scanner_refresh_profiles').on('click', '#st_npc_scanner_refresh_profiles', (e) => {
             e.preventDefault();
             refreshProfilesDropdown();
@@ -381,7 +448,8 @@ async function renderSettingsDrawer(settings) {
         const scannerTempInput = $('#st_npc_scanner_temperature');
         scannerTempInput.val(scannerSettings.temperature ?? 0.2);
         scannerTempInput.off('change').on('change', () => {
-            scannerSettings.temperature = parseFloat(String(scannerTempInput.val())) ?? 0.2;
+            const n = parseFloat(String(scannerTempInput.val()));
+            scannerSettings.temperature = Number.isFinite(n) ? n : 0.2;
             context.saveSettingsDebounced();
         });
 
@@ -486,17 +554,7 @@ async function renderSettingsDrawer(settings) {
             try {
                 const randomNum = Math.floor(Math.random() * 900 + 100);
                 const scopeType = settings.defaultScope || 'chat';
-                let targetId = 'global';
-
-                if (scopeType === 'chat') {
-                    targetId = context.chatId ? String(context.chatId) : 'default_chat';
-                } else if (scopeType === 'character') {
-                    targetId = context.characterId !== undefined && context.characters?.[context.characterId]
-                        ? String(context.characters[context.characterId].avatar)
-                        : 'default_character';
-                } else if (scopeType === 'persona') {
-                    targetId = context.powerUserSettings?.persona_selected || 'default_persona';
-                }
+                const targetId = resolveScopeTarget(scopeType, context) || `default_${scopeType}`;
 
                 const testNpcId = createNpc(
                     {
@@ -621,15 +679,13 @@ jQuery(async () => {
         const context = SillyTavern.getContext();
         const settings = initExtensionSettings();
 
-        const extensionBaseUrl = new URL('.', import.meta.url).href;
-        const db = await initDatabase(extensionBaseUrl);
+        await initDatabase();
 
         // Initialize NPC Sheet Editor modal
         await initEditorModal(updateDrawerStats);
 
         // Expose debug & console verification API
         window.ST_NPC_Tracker = {
-            db,
             settings,
             createNpc,
             updateNpc,
@@ -641,7 +697,6 @@ jQuery(async () => {
             setNpcScopeStatus,
             getNpcGroups,
             getActiveContextNpcs,
-            queryAll,
             exportJson: exportDatabaseToJson,
             importJson: importDatabaseFromJson,
             syncPromptInjection: () => syncPromptInjection(settings),
@@ -675,6 +730,15 @@ jQuery(async () => {
             }
             if (context.event_types?.MESSAGE_SENT) {
                 context.eventSource.on(context.event_types.MESSAGE_SENT, onMessageReceived);
+            }
+            if (context.event_types?.GENERATION_STARTED) {
+                context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
+                    const currentSettings = SillyTavern.getContext().extensionSettings?.[MODULE_NAME];
+                    if (currentSettings?.enabled && currentSettings?.scanner?.settingAwareFilter) {
+                        syncPromptInjection(currentSettings);
+                        updateDrawerStats();
+                    }
+                });
             }
         }
 

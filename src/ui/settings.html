@@ -10,6 +10,10 @@
                     <input id="st_npc_enabled" type="checkbox" class="checkbox" />
                     <span>Enable NPC Tracker & Injection</span>
                 </label>
+                <label class="checkbox_label" for="st_npc_ignore_chat" title="Skip NPC injection and automatic scans in this chat only. Saved with the chat.">
+                    <input id="st_npc_ignore_chat" type="checkbox" class="checkbox" />
+                    <span>Ignore this chat</span>
+                </label>
             </div>
 
             <div class="st-npc-section">
@@ -38,10 +42,26 @@
                 </div>
             </div>
 
+            <div class="st-npc-section st-npc-prompt-wrapper" style="margin-top: 6px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px;">
+                <div class="st-npc-prompt-toggle-header" id="st_npc_injection_template_toggle" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                    <span><b><i class="fa-solid fa-chevron-right" id="st_npc_injection_chevron" style="margin-right: 6px; transition: transform 0.2s;"></i> Custom Prompt Injection Format</b></span>
+                    <span style="font-size: 0.8em; opacity: 0.7;">Click to edit</span>
+                </div>
+                <div id="st_npc_injection_template_body" style="display: none; margin-top: 8px;">
+                    <textarea id="st_npc_injection_template" class="text_pole" rows="4" style="width: 100%; font-family: monospace; font-size: 0.85em; resize: vertical;" placeholder="[Active NPCs in Context:&#10;{{npcs}}&#10;]"></textarea>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                        <span class="st-npc-hint" style="font-size: 0.75em; opacity: 0.7;">Use <code>{{npcs}}</code> where NPC sheets should be injected.</span>
+                        <button type="button" class="menu_button" id="st_npc_btn_reset_injection_template" style="font-size: 0.8em; padding: 3px 8px;">
+                            <i class="fa-solid fa-rotate-left"></i> Reset to Default
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="st-npc-section st-npc-stats-panel">
                 <div class="st-npc-stat-row">
                     <span class="st-npc-stat-label"><i class="fa-solid fa-database"></i> Database Engine:</span>
-                    <span id="st_npc_db_status_badge" class="st-npc-badge success">SQLite (sql.js WASM)</span>
+                    <span id="st_npc_db_status_badge" class="st-npc-badge success">JSON (localforage)</span>
                 </div>
                 <div class="st-npc-stat-row">
                     <span class="st-npc-stat-label"><i class="fa-solid fa-users"></i> Linked NPCs in Context:</span>

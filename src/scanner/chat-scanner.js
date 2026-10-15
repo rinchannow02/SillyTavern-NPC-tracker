@@ -6,8 +6,11 @@
 import {
     createNpc,
     updateNpc,
-    queryAll,
     getNpcById,
+    parseBlocks,
+    resolveScopeTarget,
+    getActiveContextNpcs,
+    DEFAULT_BLOCKS,
 } from '../db/sqlite-store.js';
 
 import { syncPromptInjection } from '../injection.js';
@@ -75,6 +78,8 @@ export function getConnectionProfiles() {
     return [];
 }
 
+let scanning = false;
+
 /**
  * Executes chat extraction by routing to either ConnectionManagerRequestService or active ST API.
  * @param {Object} [options]
@@ -87,16 +92,23 @@ export function getConnectionProfiles() {
  * @returns {Promise<{extracted: Array<Object>, created: number, updated: number}>}
  */
 export async function scanRecentChat(options = {}) {
-    const context = SillyTavern.getContext();
-    const settings = context.extensionSettings?.['npc_tracker'] || {};
-    const scannerSettings = settings.scanner || {};
+    if (scanning) {
+        console.warn('[NPC Tracker] Scan already in progress. Skipping concurrent request.');
+        return { extracted: [], created: 0, updated: 0, skipped: true };
+    }
+    scanning = true;
+    try {
+        const context = SillyTavern.getContext();
+        const settings = context.extensionSettings?.['npc_tracker'] || {};
+        const scannerSettings = settings.scanner || {};
 
-    const scanDepth = options.scanDepth ?? scannerSettings.scanDepth ?? 10;
-    const profileId = options.connectionProfileId ?? scannerSettings.connectionProfileId ?? '';
-    const maxTokens = Math.min(8192, Math.max(100, parseInt(options.maxTokens ?? scannerSettings.maxTokens ?? 800, 10)));
-    const temperature = Math.min(2.0, Math.max(0.0, parseFloat(options.temperature ?? scannerSettings.temperature ?? 0.2)));
-    const updateMode = options.updateMode ?? scannerSettings.updateMode ?? 'merge_existing';
-    const basePrompt = options.customPrompt ?? scannerSettings.customPrompt ?? DEFAULT_EXTRACTION_PROMPT;
+        const scanDepth = options.scanDepth ?? scannerSettings.scanDepth ?? 10;
+        const profileId = options.connectionProfileId ?? scannerSettings.connectionProfileId ?? '';
+        const maxTokens = Math.min(8192, Math.max(100, parseInt(options.maxTokens ?? scannerSettings.maxTokens ?? 800, 10)));
+        const rawTemp = parseFloat(options.temperature ?? scannerSettings.temperature);
+        const temperature = Number.isFinite(rawTemp) ? Math.min(2.0, Math.max(0.0, rawTemp)) : 0.2;
+        const updateMode = options.updateMode ?? scannerSettings.updateMode ?? 'merge_existing';
+        const basePrompt = options.customPrompt || scannerSettings.customPrompt || DEFAULT_EXTRACTION_PROMPT;
 
     // 1. Gather recent messages from chat
     const chat = context.chat || [];
@@ -136,8 +148,7 @@ export async function scanRecentChat(options = {}) {
                 rawResponse = result.content ?? result.text ?? result.message ?? JSON.stringify(result);
             }
         } catch (err) {
-            console.warn(`[NPC Tracker] Connection profile request failed (${err.message}). Falling back to active ST API.`);
-            rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
+            throw new Error(`[NPC Tracker] Connection profile "${profileId}" request failed: ${err.message}`);
         }
     } else {
         rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
@@ -160,8 +171,8 @@ export async function scanRecentChat(options = {}) {
     let createdCount = 0;
     let updatedCount = 0;
 
-    const currentChatId = context.chatId ? String(context.chatId) : 'default_chat';
     const targetScope = settings.defaultScope || 'chat';
+    const targetId = resolveScopeTarget(targetScope, context) || resolveScopeTarget('chat', context) || 'default_chat';
 
     for (const item of extractedList) {
         if (!item.name || typeof item.name !== 'string' || !item.name.trim()) continue;
@@ -169,23 +180,22 @@ export async function scanRecentChat(options = {}) {
         const cleanName = item.name.trim();
         const existing = findExistingNpc(cleanName, item.aliases);
 
-        const blocks = [
-            { id: 'appearance', label: 'Appearance', type: 'text', value: item.appearance || '' },
-            { id: 'personality', label: 'Personality', type: 'text', value: item.personality || '' },
-            { id: 'relationship', label: 'Relationship', type: 'text', value: item.relationship || '' },
-        ];
+        const blocks = DEFAULT_BLOCKS.map((b) => ({
+            ...b,
+            value: item[b.id] || '',
+        }));
 
         if (existing) {
             if (updateMode === 'create_new_only') {
                 continue;
             }
 
-            // Merge details: retain existing non-empty values if extraction is sparse
+            // Merge details: only fill fields that are empty; never overwrite non-empty user data
             const mergedBlocks = Array.isArray(existing.blocks) ? [...existing.blocks] : [];
             for (const b of blocks) {
                 const targetIdx = mergedBlocks.findIndex((mb) => mb.id === b.id);
                 if (targetIdx !== -1) {
-                    if (b.value && (!mergedBlocks[targetIdx].value || b.value.length > mergedBlocks[targetIdx].value.length)) {
+                    if (!mergedBlocks[targetIdx].value && b.value) {
                         mergedBlocks[targetIdx].value = b.value;
                     }
                 } else if (b.value) {
@@ -194,9 +204,9 @@ export async function scanRecentChat(options = {}) {
             }
 
             updateNpc(existing.id, {
-                aliases: item.aliases || existing.aliases,
-                group_name: item.group_name || existing.group_name,
-                location_keywords: item.location_keywords || existing.location_keywords,
+                aliases: existing.aliases || item.aliases || '',
+                group_name: existing.group_name || item.group_name || '',
+                location_keywords: existing.location_keywords || item.location_keywords || '',
                 blocks: mergedBlocks,
             });
             updatedCount++;
@@ -212,7 +222,7 @@ export async function scanRecentChat(options = {}) {
                 [
                     {
                         scope_type: targetScope,
-                        target_id: currentChatId,
+                        target_id: targetId,
                         relationship_summary: item.relationship || 'Encountered in scene',
                     },
                 ]
@@ -224,11 +234,14 @@ export async function scanRecentChat(options = {}) {
     // 5. Re-synchronize prompt injection
     syncPromptInjection();
 
-    return {
-        extracted: extractedList,
-        created: createdCount,
-        updated: updatedCount,
-    };
+        return {
+            extracted: extractedList,
+            created: createdCount,
+            updated: updatedCount,
+        };
+    } finally {
+        scanning = false;
+    }
 }
 
 /**
@@ -241,25 +254,34 @@ export async function scanRecentChat(options = {}) {
 async function requestViaActiveApi(prompt, maxTokens = 800, temperature = 0.2) {
     const context = SillyTavern.getContext();
 
-    if (typeof context.generateQuietPrompt === 'function') {
-        return context.generateQuietPrompt({
-            quietPrompt: prompt,
-            skipWIAN: true,
-            responseLength: maxTokens,
-            removeReasoning: true,
-        });
+    try {
+        if (typeof context.generateRaw === 'function') {
+            return await context.generateRaw({
+                prompt,
+                systemPrompt: 'You are an accurate structured data extraction assistant. Return ONLY valid JSON.',
+                responseLength: maxTokens,
+                max_tokens: maxTokens,
+                temperature,
+            });
+        }
+
+        if (typeof context.generateQuietPrompt === 'function') {
+            return await context.generateQuietPrompt({
+                quietPrompt: prompt,
+                skipWIAN: true,
+                responseLength: maxTokens,
+                removeReasoning: false,
+            });
+        }
+    } catch (err) {
+        const errText = `${err?.message || ''} ${JSON.stringify(err || {})}`;
+        if (errText.includes('Reasoning is mandatory')) {
+            throw new Error('The active model (e.g. GLM-5.3-flash) requires reasoning/thinking enabled. Please enable "Show Thoughts" / set reasoning effort in SillyTavern API settings, or select a dedicated Connection Profile in NPC Tracker.');
+        }
+        throw err;
     }
 
-    if (typeof context.generateRaw === 'function') {
-        return context.generateRaw({
-            prompt,
-            systemPrompt: 'You are an accurate structured data extraction assistant. Return ONLY valid JSON.',
-            max_tokens: maxTokens,
-            temperature,
-        });
-    }
-
-    throw new Error('Neither generateQuietPrompt nor generateRaw is available in this SillyTavern context.');
+    throw new Error('Neither generateRaw nor generateQuietPrompt is available in this SillyTavern context.');
 }
 
 /**
@@ -320,14 +342,14 @@ export function parseExtractionResponse(rawText) {
  * @returns {Object|null}
  */
 function findExistingNpc(name, aliases = '') {
-    const allNpcs = queryAll('SELECT * FROM npcs');
+    const activeNpcs = getActiveContextNpcs();
     const cleanTargetName = name.toLowerCase().trim();
 
-    for (const npc of allNpcs) {
+    for (const npc of activeNpcs) {
         if (npc.name && npc.name.toLowerCase().trim() === cleanTargetName) {
             return {
                 ...npc,
-                blocks: JSON.parse(npc.blocks_json || '[]'),
+                blocks: Array.isArray(npc.blocks) ? npc.blocks : parseBlocks(npc.blocks_json),
             };
         }
 
@@ -337,7 +359,7 @@ function findExistingNpc(name, aliases = '') {
             if (splitAliases.includes(cleanTargetName)) {
                 return {
                     ...npc,
-                    blocks: JSON.parse(npc.blocks_json || '[]'),
+                    blocks: Array.isArray(npc.blocks) ? npc.blocks : parseBlocks(npc.blocks_json),
                 };
             }
         }

@@ -7,6 +7,16 @@ import { getActiveContextNpcs } from './db/sqlite-store.js';
 import { evaluateSettingAwareTriggers } from './scanner/chat-scanner.js';
 
 export const INJECTION_KEY = 'npc_tracker';
+export const IGNORE_CHAT_KEY = 'npc_tracker_ignored';
+
+/**
+ * Whether the user has opted the currently open chat out of NPC injection and auto-scans.
+ * Stored in chat metadata so the flag travels with the chat file.
+ * @returns {boolean}
+ */
+export function isChatIgnored() {
+    return Boolean(SillyTavern.getContext().chatMetadata?.[IGNORE_CHAT_KEY]);
+}
 
 let lastInjectedPrompt = '';
 
@@ -17,11 +27,12 @@ let lastInjectedPrompt = '';
  */
 export function renderNpcSheet(npc) {
     if (npc.template_mode === 'template' && npc.raw_content && npc.raw_content.trim()) {
+        // Function replacers: a string replacement would expand $&, $' etc. inside NPC text.
         let content = npc.raw_content;
-        content = content.replace(/\{\{name\}\}/gi, npc.name || '');
-        content = content.replace(/\{\{aliases\}\}/gi, npc.aliases || '');
-        content = content.replace(/\{\{(group|group_name)\}\}/gi, npc.group_name || '');
-        content = content.replace(/\{\{(location|location_keywords)\}\}/gi, npc.location_keywords || '');
+        content = content.replace(/\{\{name\}\}/gi, () => npc.name || '');
+        content = content.replace(/\{\{aliases\}\}/gi, () => npc.aliases || '');
+        content = content.replace(/\{\{(group|group_name)\}\}/gi, () => npc.group_name || '');
+        content = content.replace(/\{\{(location|location_keywords)\}\}/gi, () => npc.location_keywords || '');
         return content.trim();
     }
 
@@ -54,13 +65,18 @@ export function renderNpcSheet(npc) {
 /**
  * Aggregates all active context NPCs into a consolidated prompt injection block.
  * @param {Array<Object>} npcs - List of active NPCs in current context.
+ * @param {string} [customTemplate] - Optional custom injection wrapper template using {{npcs}}.
  * @returns {string}
  */
-export function formatActiveNpcsPrompt(npcs) {
+export function formatActiveNpcsPrompt(npcs, customTemplate) {
     if (!npcs || npcs.length === 0) return '';
 
     const renderedNpcs = npcs.map((npc) => renderNpcSheet(npc)).filter(Boolean);
     if (renderedNpcs.length === 0) return '';
+
+    if (customTemplate && typeof customTemplate === 'string' && customTemplate.includes('{{npcs}}')) {
+        return customTemplate.replace(/\{\{npcs\}\}/g, () => renderedNpcs.join('\n\n'));
+    }
 
     return `[Active NPCs in Context:\n${renderedNpcs.join('\n\n')}\n]`;
 }
@@ -74,7 +90,7 @@ export function syncPromptInjection(customSettings) {
     const context = SillyTavern.getContext();
     const settings = customSettings || context.extensionSettings?.['npc_tracker'] || {};
 
-    if (settings.enabled === false) {
+    if (settings.enabled === false || isChatIgnored()) {
         clearPromptInjection();
         return '';
     }
@@ -91,7 +107,7 @@ export function syncPromptInjection(customSettings) {
         targetNpcs = evaluateSettingAwareTriggers(activeNpcs, settings.scanner?.scanDepth || 4);
     }
 
-    const promptText = formatActiveNpcsPrompt(targetNpcs);
+    const promptText = formatActiveNpcsPrompt(targetNpcs, settings.injectionTemplate);
     const position = settings.injectionPosition ?? 1; // 1 = in-chat
     const depth = settings.injectionDepth ?? 4;
     const role = settings.injectionRole ?? 0; // 0 = system

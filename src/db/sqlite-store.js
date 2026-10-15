@@ -1,503 +1,592 @@
 /**
  * @file src/db/sqlite-store.js
- * @description In-browser SQLite (sql.js) persistence layer backed by SillyTavern's localforage.
+ * @description In-browser lightweight JSON persistence layer backed by SillyTavern's localforage.
+ * Replaces the previous sql.js SQLite runtime with zero external dependencies and fast plain-JSON storage.
  */
 
-const STORAGE_KEY = 'st_npc_tracker_sqlite_db';
-const SQLJS_CDN_BASE = 'https://cdn.jsdelivr.net/npm/sql.js@1.11.0/dist';
+const STORAGE_KEY = 'st_npc_tracker_data';
 
-let SQL = null;
-let db = null;
-let debouncedSave = null;
+export const DEFAULT_BLOCKS = Object.freeze([
+    { id: 'appearance', label: 'Appearance', type: 'text', value: '' },
+    { id: 'personality', label: 'Personality', type: 'text', value: '' },
+    { id: 'relationship', label: 'Relationship', type: 'text', value: '' },
+].map(Object.freeze));
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VALID_SCOPES = new Set(['chat', 'character', 'persona', 'global']);
+
+let npcs = [];
+let saveTimer = null;
+let loadFailed = false;
+// ST's personas.js module, loaded in initDatabase. getContext() does not expose the active persona.
+let personasModule = null;
+
+function getLocalforage() {
+    return typeof SillyTavern !== 'undefined' ? SillyTavern.libs?.localforage : null;
+}
+
+const copyBlocks = (blocks) => blocks.map((b) => ({ ...b }));
 
 /**
- * Dynamically loads sql.js WASM runtime if not already present on window.
- * @param {string} [extensionBaseUrl] - Base URL of this extension folder.
- * @returns {Promise<any>} The initialized SQL namespace.
+ * Robustly parses a blocks_json string, returning an empty array on invalid or corrupt input.
+ * @param {string|Array<Object>} s
+ * @returns {Array<Object>}
  */
-async function loadSqlJsRuntime(extensionBaseUrl) {
-    if (window.initSqlJs) {
-        return window.initSqlJs({
-            locateFile: (file) => `${SQLJS_CDN_BASE}/${file}`,
-        });
+export function parseBlocks(s) {
+    if (!s) return [];
+    if (Array.isArray(s)) return s;
+    try {
+        const res = JSON.parse(s);
+        return Array.isArray(res) ? res : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+/**
+ * Resolves the scope target identifier for the given scope type and ST context.
+ * Single source of truth across the extension.
+ * @param {string} scopeType - 'chat', 'character', 'persona', or 'global'
+ * @param {Object} context - SillyTavern context object
+ * @returns {string} The target identifier string, or empty string if unavailable.
+ */
+export function resolveScopeTarget(scopeType, context) {
+    if (!context && typeof SillyTavern !== 'undefined') {
+        context = SillyTavern.getContext?.() || null;
+    }
+    if (!context) return scopeType === 'global' ? 'global' : '';
+
+    if (scopeType === 'chat') {
+        return String(context.chatId || '');
+    }
+    if (scopeType === 'character') {
+        const char = context.characters?.[context.characterId];
+        return char ? String(char.avatar || char.name || '') : '';
+    }
+    if (scopeType === 'persona') {
+        return String(personasModule?.user_avatar || '');
+    }
+    if (scopeType === 'global') {
+        return 'global';
+    }
+    return '';
+}
+
+/**
+ * Initializes the database from localforage.
+ * The legacy SQLite key (st_npc_tracker_sqlite_db) is left untouched so pre-JSON data stays recoverable.
+ * @returns {Promise<boolean>}
+ */
+export async function initDatabase() {
+    try {
+        // Relative to /scripts/extensions/third-party/<ext>/src/db/ -> /scripts/personas.js
+        personasModule = await import('../../../../../personas.js');
+    } catch (err) {
+        console.warn('[NPC Tracker] Could not load personas.js; persona scope disabled.', err);
     }
 
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = `${SQLJS_CDN_BASE}/sql-wasm.js`;
-        script.async = true;
-        script.onload = async () => {
-            try {
-                if (!window.initSqlJs) {
-                    throw new Error('window.initSqlJs not found after script load.');
-                }
-                const sqlInstance = await window.initSqlJs({
-                    locateFile: (file) => `${SQLJS_CDN_BASE}/${file}`,
-                });
-                resolve(sqlInstance);
-            } catch (err) {
-                reject(err);
-            }
-        };
-        script.onerror = () => reject(new Error(`Failed to load sql-wasm.js from ${script.src}`));
-        document.head.appendChild(script);
-    });
+    const lf = getLocalforage();
+    try {
+        const raw = lf ? await lf.getItem(STORAGE_KEY) : null;
+        npcs = Array.isArray(raw) ? raw : [];
+    } catch (err) {
+        // Never save over data we could not read.
+        loadFailed = true;
+        npcs = [];
+        console.error('[NPC Tracker] Failed to load JSON database from localforage:', err);
+        window.toastr?.error('NPC Tracker could not load its data. Changes will not be saved until reload.');
+    }
+
+    console.log(`[NPC Tracker] Database initialized with ${npcs.length} NPC(s) (Plain JSON engine).`);
+    return true;
 }
 
 /**
- * Creates the core relational schema if tables do not exist yet.
+ * Schedules a debounced persistence write to localforage.
  */
-function initializeSchema() {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS npcs (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            aliases TEXT DEFAULT '',
-            avatar TEXT DEFAULT '',
-            group_name TEXT DEFAULT '',
-            location_keywords TEXT DEFAULT '',
-            template_mode TEXT DEFAULT 'basic',
-            blocks_json TEXT DEFAULT '[]',
-            raw_content TEXT DEFAULT '',
-            injection_position INTEGER DEFAULT 1,
-            injection_depth INTEGER DEFAULT 4,
-            injection_role INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS npc_links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            npc_id TEXT NOT NULL,
-            scope_type TEXT NOT NULL CHECK(scope_type IN ('chat', 'character', 'persona', 'global')),
-            target_id TEXT NOT NULL,
-            relationship_summary TEXT DEFAULT '',
-            is_active INTEGER DEFAULT 1,
-            created_at INTEGER NOT NULL,
-            FOREIGN KEY (npc_id) REFERENCES npcs(id) ON DELETE CASCADE,
-            UNIQUE(npc_id, scope_type, target_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_npc_links_lookup
-        ON npc_links(scope_type, target_id, is_active);
-    `);
-
-    // Safe auto-migration for existing databases
-    try {
-        db.run("ALTER TABLE npcs ADD COLUMN group_name TEXT DEFAULT '';");
-    } catch (_) {}
-    try {
-        db.run("ALTER TABLE npcs ADD COLUMN location_keywords TEXT DEFAULT '';");
-    } catch (_) {}
+function scheduleSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        saveDatabaseNow();
+    }, 300);
 }
 
 /**
- * Immediately serializes the SQLite database to a Uint8Array and saves to IndexedDB.
+ * Persists current NPC collection directly to localforage.
  * @returns {Promise<void>}
  */
 export async function saveDatabaseNow() {
-    if (!db) return;
-    const { localforage } = SillyTavern.libs;
-    const binaryArray = db.export();
-    await localforage.setItem(STORAGE_KEY, binaryArray);
-}
-
-/**
- * Schedules a debounced save (500ms) using SillyTavern's bundled lodash.
- */
-export function scheduleDatabaseSave() {
-    if (!debouncedSave) {
-        const { lodash } = SillyTavern.libs;
-        debouncedSave = lodash.debounce(async () => {
-            try {
-                await saveDatabaseNow();
-            } catch (err) {
-                console.error('[NPC Tracker] Failed to persist SQLite DB to localforage:', err);
-            }
-        }, 500);
+    const lf = getLocalforage();
+    if (loadFailed || !lf) return;
+    try {
+        await lf.setItem(STORAGE_KEY, npcs);
+    } catch (err) {
+        console.error('[NPC Tracker] Failed to persist data to localforage:', err);
     }
-    debouncedSave();
 }
 
 /**
- * Initializes the SQLite database from IndexedDB or creates a fresh instance.
- * @param {string} [extensionBaseUrl]
- * @returns {Promise<any>} The sql.js Database instance.
- */
-export async function initDatabase(extensionBaseUrl) {
-    if (db) return db;
-
-    const { localforage } = SillyTavern.libs;
-    SQL = await loadSqlJsRuntime(extensionBaseUrl);
-
-    const savedBinary = await localforage.getItem(STORAGE_KEY);
-    if (savedBinary && savedBinary instanceof Uint8Array) {
-        db = new SQL.Database(savedBinary);
-        console.log('[NPC Tracker] Restored SQLite database from localforage.');
-    } else if (savedBinary && savedBinary.buffer) {
-        db = new SQL.Database(new Uint8Array(savedBinary.buffer));
-        console.log('[NPC Tracker] Restored SQLite database from ArrayBuffer.');
-    } else {
-        db = new SQL.Database();
-        console.log('[NPC Tracker] Created new in-memory SQLite database.');
-    }
-
-    db.run('PRAGMA foreign_keys = ON;');
-    initializeSchema();
-    await saveDatabaseNow();
-
-    return db;
-}
-
-/**
- * Helper to execute a SELECT query and return an array of row objects.
- * @param {string} sql
- * @param {Array<any>} params
- * @returns {Array<Record<string, any>>}
- */
-export function queryAll(sql, params = []) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    const rows = [];
-    while (stmt.step()) {
-        rows.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return rows;
-}
-
-/**
- * Retrieves a single NPC by ID, including its associated links and parsed blocks.
- * @param {string} id - The NPC UUID.
- * @returns {Object|null}
- */
-export function getNpcById(id) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    const rows = queryAll('SELECT * FROM npcs WHERE id = ? LIMIT 1', [id]);
-    if (!rows.length) return null;
-
-    const npc = rows[0];
-    const links = queryAll('SELECT * FROM npc_links WHERE npc_id = ? ORDER BY id ASC', [id]);
-    return {
-        ...npc,
-        blocks: JSON.parse(npc.blocks_json || '[]'),
-        links,
-    };
-}
-
-/**
- * Creates a new NPC and links it to the current Chat by default (unless explicit links are passed).
- * @param {Object} npcData
- * @param {string} [npcData.name]
- * @param {string} [npcData.aliases]
- * @param {string} [npcData.avatar]
- * @param {'basic'|'template'} [npcData.template_mode]
- * @param {Array<Object>} [npcData.blocks]
- * @param {string} [npcData.raw_content]
- * @param {number} [npcData.injection_position]
- * @param {number} [npcData.injection_depth]
- * @param {number} [npcData.injection_role]
- * @param {Array<{scope_type: string, target_id: string, relationship_summary?: string}>} [links]
+ * Creates a new NPC record with embedded scope links.
+ * @param {Object} [npcData]
+ * @param {Array<Object>} [links]
  * @returns {string} The newly created NPC UUID.
  */
 export function createNpc(npcData = {}, links = []) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-
-    const context = SillyTavern.getContext();
     const now = Date.now();
     const id = crypto.randomUUID();
 
-    const defaultBlocks = npcData.blocks ?? [
-        { id: 'appearance', label: 'Appearance', type: 'text', value: '' },
-        { id: 'personality', label: 'Personality', type: 'text', value: '' },
-        { id: 'relationship', label: 'Relationship', type: 'text', value: '' },
-    ];
+    const blocks = npcData.blocks
+        ? (Array.isArray(npcData.blocks) ? npcData.blocks : parseBlocks(npcData.blocks))
+        : DEFAULT_BLOCKS.map((b) => ({ ...b }));
 
-    db.run(
-        `INSERT INTO npcs (
-            id, name, aliases, avatar, group_name, location_keywords, template_mode, blocks_json, raw_content,
-            injection_position, injection_depth, injection_role, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            id,
-            npcData.name || 'Unnamed NPC',
-            npcData.aliases || '',
-            npcData.avatar || '',
-            npcData.group_name || '',
-            npcData.location_keywords || '',
-            npcData.template_mode || 'basic',
-            JSON.stringify(defaultBlocks),
-            npcData.raw_content || '',
-            npcData.injection_position ?? 1,
-            npcData.injection_depth ?? 4,
-            npcData.injection_role ?? 0,
-            now,
-            now,
-        ]
-    );
+    const normalizedLinks = (links || []).map((l, idx) => ({
+        id: l.id || now + idx,
+        scope_type: l.scope_type,
+        target_id: String(l.target_id || ''),
+        relationship_summary: l.relationship_summary || '',
+        is_active: l.is_active ?? 1,
+        created_at: l.created_at || now,
+    }));
 
-    // Default Scope Invariant: Attach to current chat if no explicit links provided
-    const effectiveLinks = links.length > 0
-        ? links
-        : (context.chatId ? [{ scope_type: 'chat', target_id: String(context.chatId), relationship_summary: '' }] : []);
+    const newNpc = {
+        id,
+        name: String(npcData.name || '').trim(),
+        aliases: String(npcData.aliases || '').trim(),
+        group_name: String(npcData.group_name || '').trim(),
+        location_keywords: String(npcData.location_keywords || '').trim(),
+        template_mode: npcData.template_mode === 'template' ? 'template' : 'basic',
+        blocks,
+        raw_content: String(npcData.raw_content || ''),
+        links: normalizedLinks,
+        created_at: now,
+        updated_at: now,
+    };
 
-    for (const link of effectiveLinks) {
-        db.run(
-            `INSERT OR IGNORE INTO npc_links (
-                npc_id, scope_type, target_id, relationship_summary, is_active, created_at
-            ) VALUES (?, ?, ?, ?, 1, ?)`,
-            [id, link.scope_type, String(link.target_id), link.relationship_summary || '', now]
-        );
-    }
-
-    scheduleDatabaseSave();
+    npcs.push(newNpc);
+    scheduleSave();
     return id;
 }
 
 /**
- * Updates an existing NPC's fields.
- * @param {string} id - The NPC UUID.
- * @param {Object} updates - Key/value pairs to update.
+ * Updates an existing NPC record by UUID.
+ * @param {string} id - NPC UUID.
+ * @param {Object} [npcData] - Partial or complete NPC fields.
+ * @param {Array<Object>|null} [links] - Optional links replacement array.
+ * @returns {Object|null} The updated NPC record.
  */
-export function updateNpc(id, updates = {}) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+export function updateNpc(id, npcData = {}, links = null) {
+    const npc = npcs.find((n) => n.id === id);
+    if (!npc) return null;
 
-    const fields = [];
-    const values = [];
+    if (npcData.name !== undefined) npc.name = String(npcData.name).trim();
+    if (npcData.aliases !== undefined) npc.aliases = String(npcData.aliases).trim();
+    if (npcData.group_name !== undefined) npc.group_name = String(npcData.group_name).trim();
+    if (npcData.location_keywords !== undefined) npc.location_keywords = String(npcData.location_keywords).trim();
+    if (npcData.template_mode !== undefined) npc.template_mode = npcData.template_mode === 'template' ? 'template' : 'basic';
+    if (npcData.raw_content !== undefined) npc.raw_content = String(npcData.raw_content);
 
-    const allowedKeys = [
-        'name',
-        'aliases',
-        'avatar',
-        'group_name',
-        'location_keywords',
-        'template_mode',
-        'raw_content',
-        'injection_position',
-        'injection_depth',
-        'injection_role',
-    ];
-
-    for (const key of allowedKeys) {
-        if (updates[key] !== undefined) {
-            fields.push(`${key} = ?`);
-            values.push(updates[key]);
-        }
+    if (npcData.blocks !== undefined) {
+        npc.blocks = Array.isArray(npcData.blocks) ? npcData.blocks : parseBlocks(npcData.blocks);
+    } else if (npcData.blocks_json !== undefined) {
+        npc.blocks = parseBlocks(npcData.blocks_json);
     }
 
-    if (updates.blocks !== undefined) {
-        fields.push('blocks_json = ?');
-        values.push(JSON.stringify(updates.blocks));
-    } else if (updates.blocks_json !== undefined) {
-        fields.push('blocks_json = ?');
-        values.push(updates.blocks_json);
+    if (Array.isArray(links)) {
+        npc.links = links.map((l, idx) => ({
+            id: l.id || Date.now() + idx,
+            scope_type: l.scope_type,
+            target_id: String(l.target_id || ''),
+            relationship_summary: l.relationship_summary || '',
+            is_active: l.is_active ?? 1,
+            created_at: l.created_at || Date.now(),
+        }));
     }
 
-    if (fields.length === 0) return;
-
-    const now = Date.now();
-    fields.push('updated_at = ?');
-    values.push(now);
-
-    values.push(id);
-    db.run(`UPDATE npcs SET ${fields.join(', ')} WHERE id = ?`, values);
-    scheduleDatabaseSave();
+    npc.updated_at = Date.now();
+    scheduleSave();
+    return getNpcById(id);
 }
 
 /**
- * Deletes an NPC and all its associated links.
- * @param {string} id - The NPC UUID.
+ * Deletes an NPC record by UUID.
+ * @param {string} id - NPC UUID.
+ * @returns {boolean}
  */
 export function deleteNpc(id) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    db.run('DELETE FROM npc_links WHERE npc_id = ?', [id]);
-    db.run('DELETE FROM npcs WHERE id = ?', [id]);
-    scheduleDatabaseSave();
-}
-
-/**
- * Links an NPC to a specific scope (chat, character, persona, global).
- * @param {string} npcId
- * @param {string} scopeType
- * @param {string} targetId
- * @param {string} [relationshipSummary]
- */
-export function linkNpcScope(npcId, scopeType, targetId, relationshipSummary = '') {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    const now = Date.now();
-    db.run(
-        `INSERT OR REPLACE INTO npc_links (
-            npc_id, scope_type, target_id, relationship_summary, is_active, created_at
-        ) VALUES (?, ?, ?, ?, 1, ?)`,
-        [npcId, scopeType, String(targetId), relationshipSummary, now]
-    );
-    scheduleDatabaseSave();
-}
-
-/**
- * Unlinks an NPC from a specific scope.
- * @param {string} npcId
- * @param {string} scopeType
- * @param {string} targetId
- */
-export function unlinkNpcScope(npcId, scopeType, targetId) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    db.run(
-        `DELETE FROM npc_links WHERE npc_id = ? AND scope_type = ? AND target_id = ?`,
-        [npcId, scopeType, String(targetId)]
-    );
-    scheduleDatabaseSave();
-}
-
-/**
- * Retrieves all scopes linked to an NPC (active or inactive).
- * @param {string} npcId
- * @returns {Array<Object>}
- */
-export function getNpcScopes(npcId) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    return queryAll('SELECT * FROM npc_links WHERE npc_id = ? ORDER BY created_at ASC', [npcId]);
-}
-
-/**
- * Toggles or updates the active status of a scope link.
- * @param {number} linkId
- * @param {number|boolean} isActive
- */
-export function setNpcScopeStatus(linkId, isActive) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    db.run('UPDATE npc_links SET is_active = ? WHERE id = ?', [isActive ? 1 : 0, linkId]);
-    scheduleDatabaseSave();
-}
-
-/**
- * Retrieves all NPCs linked to the currently active Chat, Character, Persona, or Global scope.
- * @returns {Array<Object>}
- */
-export function getActiveContextNpcs() {
-    const context = SillyTavern.getContext();
-    const chatId = context.chatId ? String(context.chatId) : '';
-    const characterAvatar = context.characterId !== undefined && context.characters?.[context.characterId]
-        ? String(context.characters[context.characterId].avatar)
-        : '';
-    const personaAvatar = context.powerUserSettings?.persona_selected || '';
-
-    const rows = queryAll(
-        `SELECT DISTINCT n.*, l.scope_type, l.target_id, l.relationship_summary
-         FROM npcs n
-         JOIN npc_links l ON n.id = l.npc_id
-         WHERE l.is_active = 1
-           AND (
-               (l.scope_type = 'chat' AND l.target_id = ?)
-               OR (l.scope_type = 'character' AND l.target_id = ?)
-               OR (l.scope_type = 'persona' AND l.target_id = ?)
-               OR (l.scope_type = 'global')
-           )
-         ORDER BY n.updated_at DESC`,
-        [chatId, characterAvatar, personaAvatar]
-    );
-
-    return rows.map((row) => ({
-        ...row,
-        blocks: JSON.parse(row.blocks_json || '[]'),
-    }));
-}
-
-/**
- * Exports the entire SQLite database (npcs + npc_links) as a portable JSON string.
- * @returns {string}
- */
-export function exportDatabaseToJson() {
-    const npcs = queryAll('SELECT * FROM npcs ORDER BY created_at ASC');
-    const links = queryAll('SELECT * FROM npc_links ORDER BY id ASC');
-    return JSON.stringify(
-        {
-            version: 1,
-            exported_at: new Date().toISOString(),
-            npcs,
-            npc_links: links,
-        },
-        null,
-        2
-    );
-}
-
-/**
- * Imports NPCs and links from a JSON backup string (merges via INSERT OR REPLACE).
- * @param {string} jsonString
- * @returns {Promise<{npcsImported: number, linksImported: number}>}
- */
-export async function importDatabaseFromJson(jsonString) {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    const payload = JSON.parse(jsonString);
-    if (!payload || !Array.isArray(payload.npcs)) {
-        throw new Error('Invalid NPC Tracker backup JSON format.');
+    const idx = npcs.findIndex((n) => n.id === id);
+    if (idx !== -1) {
+        npcs.splice(idx, 1);
+        scheduleSave();
+        return true;
     }
+    return false;
+}
 
-    db.run('BEGIN TRANSACTION;');
-    try {
-        for (const n of payload.npcs) {
-            db.run(
-                `INSERT OR REPLACE INTO npcs (
-                    id, name, aliases, avatar, group_name, location_keywords, template_mode, blocks_json, raw_content,
-                    injection_position, injection_depth, injection_role, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    n.id,
-                    n.name,
-                    n.aliases ?? '',
-                    n.avatar ?? '',
-                    n.group_name ?? '',
-                    n.location_keywords ?? '',
-                    n.template_mode ?? 'basic',
-                    n.blocks_json ?? '[]',
-                    n.raw_content ?? '',
-                    n.injection_position ?? 1,
-                    n.injection_depth ?? 4,
-                    n.injection_role ?? 0,
-                    n.created_at ?? Date.now(),
-                    n.updated_at ?? Date.now(),
-                ]
-            );
-        }
+/**
+ * Retrieves a single NPC by UUID including parsed blocks and attached scopes.
+ * @param {string} id - NPC UUID.
+ * @returns {Object|null}
+ */
+export function getNpcById(id) {
+    const npc = npcs.find((n) => n.id === id);
+    if (!npc) return null;
 
-        if (Array.isArray(payload.npc_links)) {
-            for (const l of payload.npc_links) {
-                db.run(
-                    `INSERT OR REPLACE INTO npc_links (
-                        npc_id, scope_type, target_id, relationship_summary, is_active, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)`,
-                    [
-                        l.npc_id,
-                        l.scope_type,
-                        String(l.target_id),
-                        l.relationship_summary ?? '',
-                        l.is_active ?? 1,
-                        l.created_at ?? Date.now(),
-                    ]
-                );
-            }
-        }
-        db.run('COMMIT;');
-    } catch (err) {
-        db.run('ROLLBACK;');
-        throw err;
-    }
-
-    await saveDatabaseNow();
+    const blocks = Array.isArray(npc.blocks) ? npc.blocks.map((b) => ({ ...b })) : parseBlocks(npc.blocks_json);
     return {
-        npcsImported: payload.npcs.length,
-        linksImported: Array.isArray(payload.npc_links) ? payload.npc_links.length : 0,
+        ...npc,
+        blocks,
+        blocks_json: JSON.stringify(blocks),
+        links: (npc.links || []).map((l) => ({ ...l })),
     };
 }
 
 /**
- * Retrieves a distinct list of non-empty group names.
- * @returns {Array<string>}
+ * Links an NPC to a target scope or updates existing link relationship / active state.
+ * @param {string} npcId
+ * @param {'chat'|'character'|'persona'|'global'} scopeType
+ * @param {string} targetId
+ * @param {string} [relationshipSummary='']
+ * @param {number|boolean} [isActive=1]
+ */
+export function linkNpcScope(npcId, scopeType, targetId, relationshipSummary = '', isActive = 1) {
+    const npc = npcs.find((n) => n.id === npcId);
+    if (!npc) return;
+
+    if (!Array.isArray(npc.links)) npc.links = [];
+    const targetStr = String(targetId);
+    const existing = npc.links.find((l) => l.scope_type === scopeType && String(l.target_id) === targetStr);
+
+    if (existing) {
+        existing.relationship_summary = String(relationshipSummary || '');
+        existing.is_active = isActive ? 1 : 0;
+    } else {
+        npc.links.push({
+            id: Date.now(),
+            scope_type: scopeType,
+            target_id: targetStr,
+            relationship_summary: String(relationshipSummary || ''),
+            is_active: isActive ? 1 : 0,
+            created_at: Date.now(),
+        });
+    }
+
+    scheduleSave();
+}
+
+/**
+ * Removes a scope linkage from an NPC.
+ * @param {string} npcId
+ * @param {'chat'|'character'|'persona'|'global'} scopeType
+ * @param {string} targetId
+ */
+export function unlinkNpcScope(npcId, scopeType, targetId) {
+    const npc = npcs.find((n) => n.id === npcId);
+    if (!npc || !Array.isArray(npc.links)) return;
+
+    const targetStr = String(targetId);
+    npc.links = npc.links.filter((l) => !(l.scope_type === scopeType && String(l.target_id) === targetStr));
+    scheduleSave();
+}
+
+/**
+ * Retrieves all scope links for a specific NPC.
+ * @param {string} npcId
+ * @returns {Array<Object>}
+ */
+export function getNpcScopes(npcId) {
+    const npc = npcs.find((n) => n.id === npcId);
+    if (!npc || !Array.isArray(npc.links)) return [];
+    return npc.links.map((l) => ({ ...l }));
+}
+
+/**
+ * Sets the active/inactive status of a scope link.
+ * @param {string} npcId
+ * @param {'chat'|'character'|'persona'|'global'} scopeType
+ * @param {string} targetId
+ * @param {boolean|number} isActive
+ */
+export function setNpcScopeStatus(npcId, scopeType, targetId, isActive) {
+    const npc = npcs.find((n) => n.id === npcId);
+    if (!npc || !Array.isArray(npc.links)) return;
+
+    const targetStr = String(targetId);
+    const link = npc.links.find((l) => l.scope_type === scopeType && String(l.target_id) === targetStr);
+    if (link) {
+        link.is_active = isActive ? 1 : 0;
+        scheduleSave();
+    }
+}
+
+/**
+ * Retrieves a distinct list of group names currently in the database.
+ * @returns {string[]}
  */
 export function getNpcGroups() {
-    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
-    const rows = queryAll("SELECT DISTINCT group_name FROM npcs WHERE group_name != '' AND group_name IS NOT NULL ORDER BY group_name ASC");
-    return rows.map((r) => r.group_name);
+    const groups = new Set();
+    for (const npc of npcs) {
+        if (npc.group_name && String(npc.group_name).trim()) {
+            groups.add(String(npc.group_name).trim());
+        }
+    }
+    return Array.from(groups).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Retrieves all NPCs linked to the active context (chatId, character, persona, or global).
+ * Deduplicates multiple links using priority: chat > character > persona > global.
+ * @param {Object} [customContext]
+ * @returns {Array<Object>}
+ */
+export function getActiveContextNpcs(customContext) {
+    const context = customContext || (typeof SillyTavern !== 'undefined' ? SillyTavern.getContext?.() : null);
+    if (!context) return [];
+
+    const activeTargets = {
+        chat: resolveScopeTarget('chat', context),
+        character: resolveScopeTarget('character', context),
+        persona: resolveScopeTarget('persona', context),
+        global: 'global',
+    };
+
+    const scopePriority = {
+        chat: 4,
+        character: 3,
+        persona: 2,
+        global: 1,
+    };
+
+    const matchedNpcs = [];
+
+    for (const npc of npcs) {
+        if (!Array.isArray(npc.links) || npc.links.length === 0) continue;
+
+        let bestLink = null;
+        let bestPriority = 0;
+
+        for (const link of npc.links) {
+            if (!link.is_active) continue;
+
+            const expectedTarget = activeTargets[link.scope_type];
+            if (!expectedTarget) continue;
+
+            if (String(link.target_id) === String(expectedTarget)) {
+                const priority = scopePriority[link.scope_type] || 0;
+                if (priority > bestPriority) {
+                    bestPriority = priority;
+                    bestLink = link;
+                }
+            }
+        }
+
+        if (bestLink) {
+            const blocks = copyBlocks(Array.isArray(npc.blocks) ? npc.blocks : parseBlocks(npc.blocks_json));
+            matchedNpcs.push({
+                ...npc,
+                relationship_summary: bestLink.relationship_summary || '',
+                scope_type: bestLink.scope_type,
+                blocks,
+                blocks_json: JSON.stringify(blocks),
+            });
+        }
+    }
+
+    return matchedNpcs;
+}
+
+/**
+ * Exports the entire database to a JSON string.
+ * Flattens embedded links into an npc_links array for backward-compatible backup format.
+ * @returns {string}
+ */
+export function exportDatabaseToJson() {
+    const exportedNpcs = npcs.map((n) => ({
+        id: n.id,
+        name: n.name || '',
+        aliases: n.aliases || '',
+        group_name: n.group_name || '',
+        location_keywords: n.location_keywords || '',
+        template_mode: n.template_mode || 'basic',
+        blocks_json: JSON.stringify(n.blocks || []),
+        raw_content: n.raw_content || '',
+        created_at: n.created_at || Date.now(),
+        updated_at: n.updated_at || Date.now(),
+    }));
+
+    let linkIdCounter = 1;
+    const exportedLinks = [];
+    for (const n of npcs) {
+        if (Array.isArray(n.links)) {
+            for (const l of n.links) {
+                exportedLinks.push({
+                    id: l.id || linkIdCounter++,
+                    npc_id: n.id,
+                    scope_type: l.scope_type,
+                    target_id: String(l.target_id),
+                    relationship_summary: l.relationship_summary || '',
+                    is_active: l.is_active ?? 1,
+                    created_at: l.created_at || Date.now(),
+                });
+            }
+        }
+    }
+
+    const payload = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        npcs: exportedNpcs,
+        npc_links: exportedLinks,
+    };
+
+    return JSON.stringify(payload, null, 2);
+}
+
+/**
+ * Validates an import payload before applying it.
+ * Throws a descriptive Error if the payload is malformed or invalid.
+ * @param {any} payload
+ */
+export function validateImport(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        throw new Error('Invalid import payload: expected an object.');
+    }
+
+    if (!Array.isArray(payload.npcs)) {
+        throw new Error('Invalid import payload: "npcs" must be an array.');
+    }
+
+    for (const [i, n] of payload.npcs.entries()) {
+        if (!n || typeof n !== 'object') {
+            throw new Error(`Invalid NPC at index ${i}: must be an object.`);
+        }
+        if (typeof n.id !== 'string' || !UUID_REGEX.test(n.id)) {
+            throw new Error(`Invalid NPC id "${n.id}" at index ${i}: must match UUID format.`);
+        }
+        if (typeof n.name !== 'string' || !n.name.trim()) {
+            throw new Error(`Invalid NPC name at index ${i}: must be a non-empty string.`);
+        }
+        for (const key of ['aliases', 'group_name', 'location_keywords', 'raw_content']) {
+            if (n[key] !== undefined && n[key] !== null && typeof n[key] !== 'string') {
+                throw new Error(`Invalid NPC ${key} at index ${i}: must be a string.`);
+            }
+        }
+        if (n.template_mode !== undefined && n.template_mode !== null && !['basic', 'template'].includes(n.template_mode)) {
+            throw new Error(`Invalid NPC template_mode "${n.template_mode}" at index ${i}: must be 'basic' or 'template'.`);
+        }
+        if (n.blocks_json !== undefined && n.blocks_json !== null) {
+            let parsed;
+            try {
+                parsed = JSON.parse(n.blocks_json);
+            } catch (err) {
+                throw new Error(`Malformed NPC blocks_json at index ${i}: ${err.message}`);
+            }
+            if (!Array.isArray(parsed)) {
+                throw new Error(`Invalid NPC blocks_json at index ${i}: must parse to an array.`);
+            }
+            for (const [bi, b] of parsed.entries()) {
+                if (
+                    !b ||
+                    typeof b !== 'object' ||
+                    typeof b.id !== 'string' ||
+                    typeof b.label !== 'string' ||
+                    typeof b.value !== 'string'
+                ) {
+                    throw new Error(`Invalid block at index ${bi} in NPC ${n.id}: expected {id:string, label:string, value:string}.`);
+                }
+            }
+        }
+    }
+
+    if (payload.npc_links !== undefined && payload.npc_links !== null) {
+        if (!Array.isArray(payload.npc_links)) {
+            throw new Error('Invalid import payload: "npc_links" must be an array.');
+        }
+        for (const [i, l] of payload.npc_links.entries()) {
+            if (!l || typeof l !== 'object') {
+                throw new Error(`Invalid link at index ${i}: must be an object.`);
+            }
+            if (typeof l.npc_id !== 'string' || !UUID_REGEX.test(l.npc_id)) {
+                throw new Error(`Invalid link npc_id at index ${i}: must match UUID format.`);
+            }
+            if (typeof l.scope_type !== 'string' || !VALID_SCOPES.has(l.scope_type)) {
+                throw new Error(`Invalid link scope_type "${l.scope_type}" at index ${i}: must be one of chat, character, persona, global.`);
+            }
+            if (typeof l.target_id !== 'string') {
+                throw new Error(`Invalid link target_id at index ${i}: must be a string.`);
+            }
+            if (l.relationship_summary !== undefined && l.relationship_summary !== null && typeof l.relationship_summary !== 'string') {
+                throw new Error(`Invalid link relationship_summary at index ${i}: must be a string.`);
+            }
+        }
+    }
+}
+
+/**
+ * Imports NPCs and links from a JSON backup string.
+ * @param {string} jsonString
+ * @returns {Promise<{npcsImported: number, linksImported: number}>}
+ */
+export async function importDatabaseFromJson(jsonString) {
+    let payload;
+    try {
+        payload = JSON.parse(jsonString);
+    } catch (err) {
+        throw new Error(`JSON parse error: ${err.message}`);
+    }
+
+    validateImport(payload);
+
+    // Group links by npc_id
+    const linksByNpcId = new Map();
+    if (Array.isArray(payload.npc_links)) {
+        for (const l of payload.npc_links) {
+            if (!linksByNpcId.has(l.npc_id)) {
+                linksByNpcId.set(l.npc_id, []);
+            }
+            linksByNpcId.get(l.npc_id).push({
+                id: l.id || Date.now(),
+                scope_type: l.scope_type,
+                target_id: String(l.target_id),
+                relationship_summary: l.relationship_summary || '',
+                is_active: l.is_active ?? 1,
+                created_at: l.created_at || Date.now(),
+            });
+        }
+    }
+
+    let npcsImported = 0;
+    for (const n of payload.npcs) {
+        // Only the exporter's format (blocks_json + npc_links) is accepted; both are validated above.
+        const parsedBlocks = n.blocks_json ? parseBlocks(n.blocks_json) : copyBlocks(DEFAULT_BLOCKS);
+        const importedLinks = linksByNpcId.get(n.id) || [];
+
+        const existingIdx = npcs.findIndex((item) => item.id === n.id);
+        const npcObj = {
+            id: n.id,
+            name: n.name.trim(),
+            aliases: n.aliases || '',
+            group_name: n.group_name || '',
+            location_keywords: n.location_keywords || '',
+            template_mode: n.template_mode || 'basic',
+            blocks: parsedBlocks,
+            raw_content: n.raw_content || '',
+            links: importedLinks,
+            created_at: n.created_at || Date.now(),
+            updated_at: n.updated_at || Date.now(),
+        };
+
+        if (existingIdx !== -1) {
+            npcs[existingIdx] = npcObj;
+        } else {
+            npcs.push(npcObj);
+        }
+        npcsImported++;
+    }
+
+    await saveDatabaseNow();
+
+    return {
+        npcsImported,
+        linksImported: (payload.npc_links || []).length,
+    };
 }

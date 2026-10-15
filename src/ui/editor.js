@@ -14,6 +14,8 @@ import {
     getNpcScopes,
     setNpcScopeStatus,
     getNpcGroups,
+    resolveScopeTarget,
+    DEFAULT_BLOCKS,
 } from '../db/sqlite-store.js';
 
 import { syncPromptInjection } from '../injection.js';
@@ -191,7 +193,6 @@ export async function openNpcEditorModal(npcId = null) {
         $('#st_npc_edit_aliases').val(npc.aliases || '');
         $('#st_npc_edit_group').val(npc.group_name || '');
         $('#st_npc_edit_location').val(npc.location_keywords || '');
-        $('#st_npc_edit_avatar').val(npc.avatar || '');
         $('#st_npc_edit_template_content').val(npc.raw_content || '');
 
         currentBlocks = Array.isArray(npc.blocks) && npc.blocks.length > 0 ? npc.blocks : getDefaultBlocks();
@@ -206,7 +207,6 @@ export async function openNpcEditorModal(npcId = null) {
         $('#st_npc_edit_aliases').val('');
         $('#st_npc_edit_group').val('');
         $('#st_npc_edit_location').val('');
-        $('#st_npc_edit_avatar').val('');
         $('#st_npc_edit_template_content').val('');
 
         currentBlocks = getDefaultBlocks();
@@ -262,11 +262,7 @@ export function closeNpcEditorModal() {
  * Returns standard starting blocks.
  */
 function getDefaultBlocks() {
-    return [
-        { id: 'appearance', label: 'Appearance', type: 'text', value: '' },
-        { id: 'personality', label: 'Personality', type: 'text', value: '' },
-        { id: 'relationship', label: 'Relationship', type: 'text', value: '' },
-    ];
+    return DEFAULT_BLOCKS.map((b) => ({ ...b }));
 }
 
 /**
@@ -276,44 +272,68 @@ function renderBlocks() {
     const container = $('#st_npc_blocks_list');
     container.empty();
 
-    const { DOMPurify } = SillyTavern.libs;
-
     currentBlocks.forEach((block, index) => {
         const isStandard = STANDARD_BLOCK_IDS.has(block.id);
-        const safeLabel = DOMPurify.sanitize(block.label || block.id);
-        const safeValue = DOMPurify.sanitize(block.value || '');
+        const label = block.label || block.id || '';
+        const value = block.value || '';
 
-        const blockHtml = `
-            <div class="st-npc-block-card" data-index="${index}">
-                <div class="st-npc-block-header">
-                    <div class="st-npc-block-title-row">
-                        <span class="st-npc-block-drag-handle"><i class="fa-solid fa-grip-vertical"></i></span>
-                        ${
-                            isStandard
-                                ? `<span class="st-npc-block-label-fixed"><b>${safeLabel}</b></span>`
-                                : `<input type="text" class="text_pole st-npc-block-label-input" value="${escapeAttr(block.label)}" placeholder="Block Name" />`
-                        }
-                    </div>
-                    <div class="st-npc-block-actions">
-                        <button type="button" class="st-npc-btn-reorder" data-dir="up" title="Move Up" ${index === 0 ? 'disabled' : ''}>
-                            <i class="fa-solid fa-arrow-up"></i>
-                        </button>
-                        <button type="button" class="st-npc-btn-reorder" data-dir="down" title="Move Down" ${index === currentBlocks.length - 1 ? 'disabled' : ''}>
-                            <i class="fa-solid fa-arrow-down"></i>
-                        </button>
-                        ${
-                            !isStandard
-                                ? `<button type="button" class="st-npc-btn-delete-block" title="Delete Block"><i class="fa-solid fa-trash"></i></button>`
-                                : ''
-                        }
-                    </div>
-                </div>
-                <div class="st-npc-block-body">
-                    <textarea class="text_pole st-npc-block-textarea" rows="2" placeholder="Enter ${safeLabel.toLowerCase()} details...">${safeValue}</textarea>
-                </div>
-            </div>
-        `;
-        container.append(blockHtml);
+        const card = $('<div>').addClass('st-npc-block-card').attr('data-index', index);
+        const header = $('<div>').addClass('st-npc-block-header');
+        const titleRow = $('<div>').addClass('st-npc-block-title-row');
+
+        const dragHandle = $('<span>').addClass('st-npc-block-drag-handle').append($('<i>').addClass('fa-solid fa-grip-vertical'));
+        titleRow.append(dragHandle);
+
+        if (isStandard) {
+            const fixedLabel = $('<span>').addClass('st-npc-block-label-fixed').append($('<b>').text(label));
+            titleRow.append(fixedLabel);
+        } else {
+            const labelInput = $('<input>')
+                .attr('type', 'text')
+                .addClass('text_pole st-npc-block-label-input')
+                .val(label)
+                .attr('placeholder', 'Block Name');
+            titleRow.append(labelInput);
+        }
+
+        const actions = $('<div>').addClass('st-npc-block-actions');
+        const btnUp = $('<button>')
+            .attr('type', 'button')
+            .addClass('st-npc-btn-reorder')
+            .attr('data-dir', 'up')
+            .attr('title', 'Move Up')
+            .prop('disabled', index === 0)
+            .append($('<i>').addClass('fa-solid fa-arrow-up'));
+        const btnDown = $('<button>')
+            .attr('type', 'button')
+            .addClass('st-npc-btn-reorder')
+            .attr('data-dir', 'down')
+            .attr('title', 'Move Down')
+            .prop('disabled', index === currentBlocks.length - 1)
+            .append($('<i>').addClass('fa-solid fa-arrow-down'));
+        actions.append(btnUp, btnDown);
+
+        if (!isStandard) {
+            const btnDelete = $('<button>')
+                .attr('type', 'button')
+                .addClass('st-npc-btn-delete-block')
+                .attr('title', 'Delete Block')
+                .append($('<i>').addClass('fa-solid fa-trash'));
+            actions.append(btnDelete);
+        }
+
+        header.append(titleRow, actions);
+
+        const body = $('<div>').addClass('st-npc-block-body');
+        const textarea = $('<textarea>')
+            .addClass('text_pole st-npc-block-textarea')
+            .attr('rows', '2')
+            .attr('placeholder', `Enter ${label.toLowerCase()} details...`)
+            .val(value);
+        body.append(textarea);
+
+        card.append(header, body);
+        container.append(card);
     });
 
     // Bind block events
@@ -394,32 +414,22 @@ function addCustomBlock() {
  */
 function addScopeLink(scopeType) {
     const context = SillyTavern.getContext();
-    let targetId = 'global';
-    let label = 'Global Scope';
+    const targetId = resolveScopeTarget(scopeType, context);
+    if (!targetId && scopeType !== 'global') {
+        if (window.toastr) window.toastr.warning(`No active ${scopeType} loaded.`);
+        return;
+    }
 
+    let label = targetId;
     if (scopeType === 'chat') {
-        if (!context.chatId) {
-            if (window.toastr) window.toastr.warning('No chat is currently active.');
-            return;
-        }
-        targetId = String(context.chatId);
         label = `Chat: ${targetId.slice(0, 12)}...`;
     } else if (scopeType === 'character') {
         const char = context.characterId !== undefined && context.characters?.[context.characterId];
-        if (!char) {
-            if (window.toastr) window.toastr.warning('No character currently loaded.');
-            return;
-        }
-        targetId = String(char.avatar || char.name);
-        label = `Char: ${char.name || targetId}`;
+        label = `Char: ${char?.name || targetId}`;
     } else if (scopeType === 'persona') {
-        const persona = context.powerUserSettings?.persona_selected;
-        if (!persona) {
-            if (window.toastr) window.toastr.warning('No persona currently selected.');
-            return;
-        }
-        targetId = String(persona);
-        label = `Persona: ${persona}`;
+        label = `Persona: ${targetId}`;
+    } else {
+        label = 'Global Scope';
     }
 
     // Check duplicate
@@ -477,9 +487,6 @@ function renderScopeLinks() {
         const idx = $(this).closest('.st-npc-scope-item').data('link-idx');
         if (currentLinks[idx]) {
             currentLinks[idx].is_active = $(this).prop('checked') ? 1 : 0;
-            if (currentLinks[idx].id) {
-                setNpcScopeStatus(currentLinks[idx].id, currentLinks[idx].is_active);
-            }
         }
     });
 
@@ -492,10 +499,6 @@ function renderScopeLinks() {
 
     container.find('.st-npc-btn-unlink').on('click', function () {
         const idx = $(this).closest('.st-npc-scope-item').data('link-idx');
-        const link = currentLinks[idx];
-        if (currentNpcId && link) {
-            unlinkNpcScope(currentNpcId, link.scope_type, link.target_id);
-        }
         currentLinks.splice(idx, 1);
         renderScopeLinks();
     });
@@ -517,7 +520,6 @@ async function saveNpcFromModal() {
     const aliases = String($('#st_npc_edit_aliases').val() || '').trim();
     const groupName = String($('#st_npc_edit_group').val() || '').trim();
     const locationKeywords = String($('#st_npc_edit_location').val() || '').trim();
-    const avatar = String($('#st_npc_edit_avatar').val() || '').trim();
     const rawContent = String($('#st_npc_edit_template_content').val() || '').trim();
 
     const payload = {
@@ -525,7 +527,6 @@ async function saveNpcFromModal() {
         aliases,
         group_name: groupName,
         location_keywords: locationKeywords,
-        avatar,
         template_mode: currentMode,
         blocks: currentBlocks,
         raw_content: rawContent,
@@ -536,14 +537,20 @@ async function saveNpcFromModal() {
             // Update existing
             updateNpc(currentNpcId, payload);
 
-            // Re-sync all currentLinks
-            for (const link of currentLinks) {
-                linkNpcScope(currentNpcId, link.scope_type, link.target_id, link.relationship_summary);
-                if (link.is_active === 0) {
-                    const scopes = getNpcScopes(currentNpcId);
-                    const saved = scopes.find((s) => s.scope_type === link.scope_type && s.target_id === link.target_id);
-                    if (saved) setNpcScopeStatus(saved.id, 0);
+            // Diff against getNpcScopes(id): delete removed links, then upsert the rest
+            const existingScopes = getNpcScopes(currentNpcId);
+            for (const es of existingScopes) {
+                const stillPresent = currentLinks.some(
+                    (cl) => cl.scope_type === es.scope_type && String(cl.target_id) === String(es.target_id)
+                );
+                if (!stillPresent) {
+                    unlinkNpcScope(currentNpcId, es.scope_type, es.target_id);
                 }
+            }
+
+            for (const link of currentLinks) {
+                const active = link.is_active !== 0 ? 1 : 0;
+                linkNpcScope(currentNpcId, link.scope_type, link.target_id, link.relationship_summary || '', active);
             }
 
             if (window.toastr) window.toastr.success(`Updated NPC: ${name}`);
@@ -577,12 +584,25 @@ async function deleteNpcFromModal() {
     const btn = $('#st_npc_modal_delete_btn');
     const name = $('#st_npc_edit_name').val() || 'this NPC';
 
-    // 1. Try SillyTavern's native Popup.show.confirm if available
-    if (typeof Popup !== 'undefined' && Popup.show?.confirm) {
+    // 1. Try SillyTavern's native Popup.show.confirm or callGenericPopup if available
+    const context = SillyTavern.getContext();
+    const Popup = context.Popup || (typeof window.Popup !== 'undefined' ? window.Popup : undefined);
+    if (Popup?.show?.confirm) {
         try {
             const confirmed = await Popup.show.confirm(
                 'Delete NPC',
                 `Are you sure you want to delete "${name}"? This cannot be undone.`
+            );
+            if (confirmed) {
+                await executeModalDelete(currentNpcId, name);
+            }
+            return;
+        } catch (_) {}
+    } else if (typeof context.callGenericPopup === 'function') {
+        try {
+            const confirmed = await context.callGenericPopup(
+                `Are you sure you want to delete "${name}"? This cannot be undone.`,
+                1
             );
             if (confirmed) {
                 await executeModalDelete(currentNpcId, name);
@@ -614,7 +634,6 @@ async function deleteNpcFromModal() {
 async function executeModalDelete(npcId, name) {
     try {
         deleteNpc(npcId);
-        await saveDatabaseNow();
         syncPromptInjection();
         if (window.toastr) window.toastr.success(`Deleted ${name}`);
 
