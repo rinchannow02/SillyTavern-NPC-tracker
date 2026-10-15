@@ -14,6 +14,7 @@ import { syncPromptInjection } from '../injection.js';
 
 export const DEFAULT_EXTRACTION_PROMPT = `Extract any newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.
 Do NOT extract the main user persona or the primary character.
+Only account for NPCs that regularly appear or actively interact in the story (ignore one-off background mentions, bystanders, or minor figures who barely interact).
 
 For each NPC found, output a JSON array of objects with the following keys:
 - "name": string (Full or recognized name of the NPC)
