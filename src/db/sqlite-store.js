@@ -54,6 +54,8 @@ function initializeSchema() {
             name TEXT NOT NULL,
             aliases TEXT DEFAULT '',
             avatar TEXT DEFAULT '',
+            group_name TEXT DEFAULT '',
+            location_keywords TEXT DEFAULT '',
             template_mode TEXT DEFAULT 'basic',
             blocks_json TEXT DEFAULT '[]',
             raw_content TEXT DEFAULT '',
@@ -79,6 +81,14 @@ function initializeSchema() {
         CREATE INDEX IF NOT EXISTS idx_npc_links_lookup
         ON npc_links(scope_type, target_id, is_active);
     `);
+
+    // Safe auto-migration for existing databases
+    try {
+        db.run("ALTER TABLE npcs ADD COLUMN group_name TEXT DEFAULT '';");
+    } catch (_) {}
+    try {
+        db.run("ALTER TABLE npcs ADD COLUMN location_keywords TEXT DEFAULT '';");
+    } catch (_) {}
 }
 
 /**
@@ -206,14 +216,16 @@ export function createNpc(npcData = {}, links = []) {
 
     db.run(
         `INSERT INTO npcs (
-            id, name, aliases, avatar, template_mode, blocks_json, raw_content,
+            id, name, aliases, avatar, group_name, location_keywords, template_mode, blocks_json, raw_content,
             injection_position, injection_depth, injection_role, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             id,
             npcData.name || 'Unnamed NPC',
             npcData.aliases || '',
             npcData.avatar || '',
+            npcData.group_name || '',
+            npcData.location_keywords || '',
             npcData.template_mode || 'basic',
             JSON.stringify(defaultBlocks),
             npcData.raw_content || '',
@@ -258,6 +270,8 @@ export function updateNpc(id, updates = {}) {
         'name',
         'aliases',
         'avatar',
+        'group_name',
+        'location_keywords',
         'template_mode',
         'raw_content',
         'injection_position',
@@ -426,14 +440,16 @@ export async function importDatabaseFromJson(jsonString) {
         for (const n of payload.npcs) {
             db.run(
                 `INSERT OR REPLACE INTO npcs (
-                    id, name, aliases, avatar, template_mode, blocks_json, raw_content,
+                    id, name, aliases, avatar, group_name, location_keywords, template_mode, blocks_json, raw_content,
                     injection_position, injection_depth, injection_role, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     n.id,
                     n.name,
                     n.aliases ?? '',
                     n.avatar ?? '',
+                    n.group_name ?? '',
+                    n.location_keywords ?? '',
                     n.template_mode ?? 'basic',
                     n.blocks_json ?? '[]',
                     n.raw_content ?? '',
@@ -474,4 +490,14 @@ export async function importDatabaseFromJson(jsonString) {
         npcsImported: payload.npcs.length,
         linksImported: Array.isArray(payload.npc_links) ? payload.npc_links.length : 0,
     };
+}
+
+/**
+ * Retrieves a distinct list of non-empty group names.
+ * @returns {Array<string>}
+ */
+export function getNpcGroups() {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    const rows = queryAll("SELECT DISTINCT group_name FROM npcs WHERE group_name != '' AND group_name IS NOT NULL ORDER BY group_name ASC");
+    return rows.map((r) => r.group_name);
 }

@@ -37,6 +37,8 @@
  * @property {string} name NPC name
  * @property {string} [aliases] Comma-separated trigger aliases
  * @property {string} [avatar] URL or path to avatar image
+ * @property {string} [group_name] Optional sub-group or faction (e.g. 'Silvermoon Tavern', 'Royal Guard')
+ * @property {string} [location_keywords] Comma-separated setting/location trigger keywords
  * @property {NpcTemplateMode} [template_mode] 'basic' or 'template'
  * @property {string} [blocks_json] Serialized JSON string of NpcBlock[]
  * @property {NpcBlock[]} [blocks] Parsed blocks array

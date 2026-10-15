@@ -19,12 +19,21 @@ export function renderNpcSheet(npc) {
         let content = npc.raw_content;
         content = content.replace(/\{\{name\}\}/gi, npc.name || '');
         content = content.replace(/\{\{aliases\}\}/gi, npc.aliases || '');
+        content = content.replace(/\{\{(group|group_name)\}\}/gi, npc.group_name || '');
+        content = content.replace(/\{\{(location|location_keywords)\}\}/gi, npc.location_keywords || '');
         return content.trim();
     }
 
     const lines = [];
-    const title = npc.aliases ? `### NPC: ${npc.name} (${npc.aliases})` : `### NPC: ${npc.name}`;
+    let title = npc.aliases ? `### NPC: ${npc.name} (${npc.aliases})` : `### NPC: ${npc.name}`;
+    if (npc.group_name) {
+        title += ` [Group: ${npc.group_name}]`;
+    }
     lines.push(title);
+
+    if (npc.location_keywords && String(npc.location_keywords).trim()) {
+        lines.push(`- **Location/Setting:** ${String(npc.location_keywords).trim()}`);
+    }
 
     const blocks = Array.isArray(npc.blocks) ? npc.blocks : [];
     for (const block of blocks) {

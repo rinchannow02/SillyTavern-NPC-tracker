@@ -1,0 +1,109 @@
+<div id="st_npc_modal_backdrop" class="st-npc-modal-backdrop" style="display: none;">
+    <div class="st-npc-modal-dialog">
+        <div class="st-npc-modal-header">
+            <h3 id="st_npc_modal_title"><i class="fa-solid fa-id-card"></i> NPC Sheet Editor</h3>
+            <button type="button" class="st-npc-modal-close" id="st_npc_modal_close_btn" title="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <div class="st-npc-modal-body">
+            <!-- Hidden ID field -->
+            <input type="hidden" id="st_npc_edit_id" value="" />
+
+            <!-- Core Metadata Grid -->
+            <div class="st-npc-form-grid">
+                <div class="st-npc-form-group">
+                    <label for="st_npc_edit_name"><b>Name:</b></label>
+                    <input type="text" id="st_npc_edit_name" class="text_pole" placeholder="e.g. Captain Vane" required />
+                </div>
+                <div class="st-npc-form-group">
+                    <label for="st_npc_edit_aliases"><b>Aliases / Trigger Keywords:</b></label>
+                    <input type="text" id="st_npc_edit_aliases" class="text_pole" placeholder="e.g. Vane, Pirate Captain, Helmsman" />
+                </div>
+                <div class="st-npc-form-group">
+                    <label for="st_npc_edit_group"><b>Group / Sub-Group:</b></label>
+                    <input type="text" id="st_npc_edit_group" class="text_pole" list="st_npc_group_datalist" placeholder="e.g. Silvermoon Tavern, City Guard, Crimson Fleet" />
+                    <datalist id="st_npc_group_datalist"></datalist>
+                </div>
+                <div class="st-npc-form-group">
+                    <label for="st_npc_edit_location"><b>Location / Setting Triggers:</b></label>
+                    <input type="text" id="st_npc_edit_location" class="text_pole" placeholder="e.g. tavern, docks, port royal" />
+                </div>
+                <div class="st-npc-form-group full-width">
+                    <label for="st_npc_edit_avatar"><b>Avatar Image URL:</b></label>
+                    <input type="text" id="st_npc_edit_avatar" class="text_pole" placeholder="https://... or relative path" />
+                </div>
+            </div>
+
+            <!-- Editor Mode Tabs -->
+            <div class="st-npc-tab-bar">
+                <button type="button" class="st-npc-tab-btn active" data-tab="basic" id="st_npc_tab_basic">
+                    <i class="fa-solid fa-cubes"></i> Basic Blocks
+                </button>
+                <button type="button" class="st-npc-tab-btn" data-tab="template" id="st_npc_tab_template">
+                    <i class="fa-solid fa-code"></i> Freeform Template
+                </button>
+            </div>
+
+            <!-- Tab 1: Basic Block Mode -->
+            <div class="st-npc-tab-content active" id="st_npc_tab_content_basic">
+                <div id="st_npc_blocks_list" class="st-npc-blocks-container">
+                    <!-- Dynamic Blocks injected here -->
+                </div>
+                <button type="button" class="menu_button st-npc-btn-add-block" id="st_npc_btn_add_block">
+                    <i class="fa-solid fa-plus"></i> Add Custom Block
+                </button>
+            </div>
+
+            <!-- Tab 2: Template Mode -->
+            <div class="st-npc-tab-content" id="st_npc_tab_content_template" style="display: none;">
+                <div class="st-npc-template-helper">
+                    <span>Available tokens:</span>
+                    <button type="button" class="st-npc-token-pill" data-token="{{name}}">{{name}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{aliases}}">{{aliases}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{group}}">{{group}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{location}}">{{location}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{appearance}}">{{appearance}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{personality}}">{{personality}}</button>
+                    <button type="button" class="st-npc-token-pill" data-token="{{relationship}}">{{relationship}}</button>
+                </div>
+                <textarea id="st_npc_edit_template_content" class="text_pole st-npc-template-area" rows="8" placeholder="### NPC: {{name}} [{{group}}]\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}"></textarea>
+            </div>
+
+            <!-- Scope Linking Section -->
+            <div class="st-npc-scopes-section">
+                <h4><i class="fa-solid fa-link"></i> Scope Linkage & Visibility</h4>
+                <div class="st-npc-scope-actions">
+                    <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_link_chat">
+                        <i class="fa-solid fa-message"></i> + Current Chat
+                    </button>
+                    <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_link_char">
+                        <i class="fa-solid fa-user-tag"></i> + Active Character
+                    </button>
+                    <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_link_persona">
+                        <i class="fa-solid fa-id-badge"></i> + Active Persona
+                    </button>
+                    <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_link_global">
+                        <i class="fa-solid fa-globe"></i> + Global
+                    </button>
+                </div>
+                <div id="st_npc_modal_scopes_list" class="st-npc-scopes-list">
+                    <!-- Scope rows injected here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="st-npc-modal-footer">
+            <button type="button" class="menu_button danger" id="st_npc_modal_delete_btn" style="display: none;">
+                <i class="fa-solid fa-trash-can"></i> Delete NPC
+            </button>
+            <div class="st-npc-modal-footer-right">
+                <button type="button" class="menu_button" id="st_npc_modal_cancel_btn">Cancel</button>
+                <button type="button" class="menu_button primary" id="st_npc_modal_save_btn">
+                    <i class="fa-solid fa-floppy-disk"></i> Save NPC
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
