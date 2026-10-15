@@ -4,6 +4,7 @@
  */
 
 import { getActiveContextNpcs } from './db/sqlite-store.js';
+import { evaluateSettingAwareTriggers } from './scanner/chat-scanner.js';
 
 export const INJECTION_KEY = 'npc_tracker';
 
@@ -85,7 +86,12 @@ export function syncPromptInjection(customSettings) {
         return '';
     }
 
-    const promptText = formatActiveNpcsPrompt(activeNpcs);
+    let targetNpcs = activeNpcs;
+    if (settings.scanner?.settingAwareFilter) {
+        targetNpcs = evaluateSettingAwareTriggers(activeNpcs, settings.scanner?.scanDepth || 4);
+    }
+
+    const promptText = formatActiveNpcsPrompt(targetNpcs);
     const position = settings.injectionPosition ?? 1; // 1 = in-chat
     const depth = settings.injectionDepth ?? 4;
     const role = settings.injectionRole ?? 0; // 0 = system

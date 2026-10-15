@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (Milestone 3: Dynamic Block Editor & Groups)
+ * @description Entry point for SillyTavern-NPC-tracker (Milestone 4: LLM Chat Scanner & Setting-Aware Engine)
  */
 
 import {
@@ -34,7 +34,15 @@ import {
     closeNpcEditorModal,
 } from './src/ui/editor.js';
 
+import {
+    scanRecentChat,
+    getConnectionProfiles,
+    evaluateSettingAwareTriggers,
+} from './src/scanner/chat-scanner.js';
+
 export const MODULE_NAME = 'npc_tracker';
+
+let messageCounterSinceLastScan = 0;
 
 const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -48,9 +56,9 @@ const DEFAULT_SETTINGS = Object.freeze({
         scanDepth: 10,
         triggerMode: 'manual', // 'manual' | 'every_n_messages' | 'on_keyword'
         everyNMessages: 5,
-        updateMode: 'merge_existing', // 'create_new_only' | 'merge_existing' | 'ask_before_apply'
-        customPrompt:
-            'Extract any newly introduced or updated NPCs from the recent roleplay messages. Return structured JSON with name, appearance, personality, and relationship to the main characters.',
+        updateMode: 'merge_existing', // 'create_new_only' | 'merge_existing'
+        settingAwareFilter: false,
+        customPrompt: '',
     },
     defaultTemplate: `### NPC: {{name}}\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}\n- **Relationship:** {{relationship}}`,
 });
@@ -152,12 +160,57 @@ function updateDrawerStats() {
  */
 function onContextChanged() {
     try {
+        messageCounterSinceLastScan = 0;
         const activeNpcs = getActiveContextNpcs();
         console.debug(`[NPC Tracker] Context changed. ${activeNpcs.length} linked NPC(s) in active scope.`);
         syncPromptInjection();
         updateDrawerStats();
     } catch (err) {
         console.error('[NPC Tracker] Error updating prompt on context change:', err);
+    }
+}
+
+/**
+ * Event handler for automated scan triggers on new messages.
+ */
+async function onMessageReceived() {
+    const context = SillyTavern.getContext();
+    const settings = context.extensionSettings?.[MODULE_NAME];
+    if (!settings || !settings.enabled || !settings.scanner || !settings.scanner.enabled) {
+        return;
+    }
+
+    const { triggerMode, everyNMessages } = settings.scanner;
+
+    if (triggerMode === 'every_n_messages') {
+        messageCounterSinceLastScan++;
+        if (messageCounterSinceLastScan >= (everyNMessages || 5)) {
+            messageCounterSinceLastScan = 0;
+            console.log(`[NPC Tracker] Automated scan triggered (every ${everyNMessages || 5} messages).`);
+            try {
+                const result = await scanRecentChat();
+                if (result.created > 0 || result.updated > 0) {
+                    updateDrawerStats();
+                    if (window.toastr) {
+                        window.toastr.info(`NPC Scanner: Found ${result.created} new, updated ${result.updated} NPC(s).`);
+                    }
+                }
+            } catch (err) {
+                console.error('[NPC Tracker] Automated message scan failed:', err);
+            }
+        }
+    } else if (triggerMode === 'on_keyword') {
+        // Quick keyword check on the last message
+        const chat = context.chat || [];
+        const lastMsg = chat[chat.length - 1]?.mes || '';
+        if (lastMsg) {
+            const activeNpcs = getActiveContextNpcs();
+            const filtered = evaluateSettingAwareTriggers(activeNpcs, 1);
+            if (filtered.length !== activeNpcs.length) {
+                syncPromptInjection(settings);
+                updateDrawerStats();
+            }
+        }
     }
 }
 
@@ -229,6 +282,121 @@ async function renderSettingsDrawer(settings) {
             settings.injectionPosition = parseInt(String(positionSelect.val()), 10) || 1;
             context.saveSettingsDebounced();
             syncPromptInjection(settings);
+        });
+
+        // ==========================================
+        // Bind Scanner Settings & Controls
+        // ==========================================
+        const scannerSettings = settings.scanner || {};
+
+        // Scanner Profile Dropdown
+        const profileSelect = $('#st_npc_scanner_profile');
+        const profiles = getConnectionProfiles();
+        profileSelect.empty();
+        profileSelect.append('<option value="">Active SillyTavern API</option>');
+        for (const p of profiles) {
+            profileSelect.append(`<option value="${p.id}">${p.name} (${p.id})</option>`);
+        }
+        profileSelect.val(scannerSettings.connectionProfileId || '');
+        profileSelect.off('change').on('change', () => {
+            scannerSettings.connectionProfileId = String(profileSelect.val());
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Enable Checkbox
+        const scannerEnabledCheckbox = $('#st_npc_scanner_enabled');
+        scannerEnabledCheckbox.prop('checked', Boolean(scannerSettings.enabled));
+        if (scannerSettings.enabled) {
+            $('#st_npc_scanner_controls').show();
+        }
+        scannerEnabledCheckbox.off('change').on('change', () => {
+            scannerSettings.enabled = scannerEnabledCheckbox.prop('checked');
+            if (scannerSettings.enabled) {
+                $('#st_npc_scanner_controls').slideDown(150);
+            } else {
+                $('#st_npc_scanner_controls').slideUp(150);
+            }
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Trigger Mode
+        const triggerSelect = $('#st_npc_scanner_trigger');
+        triggerSelect.val(scannerSettings.triggerMode || 'manual');
+        if (scannerSettings.triggerMode === 'every_n_messages') {
+            $('#st_npc_scanner_every_n_row').show();
+        }
+        triggerSelect.off('change').on('change', () => {
+            scannerSettings.triggerMode = String(triggerSelect.val());
+            if (scannerSettings.triggerMode === 'every_n_messages') {
+                $('#st_npc_scanner_every_n_row').slideDown(150);
+            } else {
+                $('#st_npc_scanner_every_n_row').slideUp(150);
+            }
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Scan Depth
+        const scannerDepthInput = $('#st_npc_scanner_depth');
+        scannerDepthInput.val(scannerSettings.scanDepth ?? 10);
+        scannerDepthInput.off('change').on('change', () => {
+            scannerSettings.scanDepth = parseInt(String(scannerDepthInput.val()), 10) || 10;
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Every N Messages
+        const scannerEveryNInput = $('#st_npc_scanner_every_n');
+        scannerEveryNInput.val(scannerSettings.everyNMessages ?? 5);
+        scannerEveryNInput.off('change').on('change', () => {
+            scannerSettings.everyNMessages = parseInt(String(scannerEveryNInput.val()), 10) || 5;
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Update Mode
+        const updateModeSelect = $('#st_npc_scanner_update_mode');
+        updateModeSelect.val(scannerSettings.updateMode || 'merge_existing');
+        updateModeSelect.off('change').on('change', () => {
+            scannerSettings.updateMode = String(updateModeSelect.val());
+            context.saveSettingsDebounced();
+        });
+
+        // Setting-Aware Selective Injection Checkbox
+        const settingAwareCheckbox = $('#st_npc_setting_aware_enabled');
+        settingAwareCheckbox.prop('checked', Boolean(scannerSettings.settingAwareFilter));
+        settingAwareCheckbox.off('change').on('change', () => {
+            scannerSettings.settingAwareFilter = settingAwareCheckbox.prop('checked');
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
+            updateDrawerStats();
+        });
+
+        // Scan Recent Chat Now Button
+        $('#st_npc_btn_scan_now').off('click').on('click', async () => {
+            const btn = $('#st_npc_btn_scan_now');
+            const btnText = $('#st_npc_scan_btn_text');
+            const badge = $('#st_npc_scanner_status_badge');
+
+            btn.prop('disabled', true);
+            btnText.html('<i class="fa-solid fa-spinner fa-spin"></i> Scanning Chat...');
+            badge.removeClass('info success warning').addClass('warning').textContent = 'Scanning...';
+
+            try {
+                const result = await scanRecentChat();
+                badge.removeClass('warning').addClass('success').textContent = 'Completed';
+                updateDrawerStats();
+
+                if (window.toastr) {
+                    window.toastr.success(`Scan Complete: ${result.created} created, ${result.updated} updated.`);
+                }
+            } catch (err) {
+                console.error('[NPC Tracker] Scan error:', err);
+                badge.removeClass('warning success').addClass('info').textContent = 'Error';
+                if (window.toastr) {
+                    window.toastr.error(`Scan failed: ${err.message}`);
+                }
+            } finally {
+                btn.prop('disabled', false);
+                btnText.html('<i class="fa-solid fa-radar"></i> Scan Recent Chat Now');
+            }
         });
 
         // Bind + New NPC button to open Editor modal
@@ -399,6 +567,9 @@ jQuery(async () => {
             renderNpcSheet,
             openNpcEditorModal,
             closeNpcEditorModal,
+            scanRecentChat,
+            getConnectionProfiles,
+            evaluateSettingAwareTriggers,
             updateDrawerStats,
         };
 
@@ -416,9 +587,15 @@ jQuery(async () => {
             if (context.event_types?.CHARACTER_PAGE_LOADED) {
                 context.eventSource.on(context.event_types.CHARACTER_PAGE_LOADED, onContextChanged);
             }
+            if (context.event_types?.CHARACTER_MESSAGE_RENDERED) {
+                context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, onMessageReceived);
+            }
+            if (context.event_types?.MESSAGE_SENT) {
+                context.eventSource.on(context.event_types.MESSAGE_SENT, onMessageReceived);
+            }
         }
 
-        console.log('[NPC Tracker] Milestone 3 (v3) initialized successfully.');
+        console.log('[NPC Tracker] Milestone 4 (v4) initialized successfully.');
     } catch (err) {
         console.error('[NPC Tracker] Initialization failed:', err);
     }
