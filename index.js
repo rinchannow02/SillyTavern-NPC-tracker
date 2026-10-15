@@ -170,13 +170,6 @@ async function renderSettingsDrawer(settings) {
         $('.st-npc-settings').remove();
         container.append(templateHtml);
 
-        // Bind collapsible drawer toggle
-        $('.st-npc-settings .inline-drawer-toggle').off('click').on('click', function () {
-            const drawerContent = $(this).siblings('.inline-drawer-content');
-            drawerContent.slideToggle(200);
-            $(this).find('.inline-drawer-icon').toggleClass('down up');
-        });
-
         // Bind Enable/Disable toggle
         const enabledCheckbox = $('#st_npc_enabled');
         enabledCheckbox.prop('checked', Boolean(settings.enabled));
