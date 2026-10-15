@@ -24,7 +24,7 @@ A client-side SillyTavern UI Extension that tracks NPCs separately from World In
 
 ### Pillar 3: Multi-Scope Linking & Prompt Injection
 - **Database Schema (`sql.js`):**
-  - `npcs (id TEXT PRIMARY KEY, name TEXT, aliases TEXT, avatar TEXT, template_mode TEXT, blocks_json TEXT, raw_content TEXT, injection_position INT, injection_depth INT, injection_role INT, created_at INT, updated_at INT)`
+  - `npcs (id TEXT PRIMARY KEY, name TEXT, aliases TEXT, avatar TEXT, group_name TEXT, location_keywords TEXT, template_mode TEXT, blocks_json TEXT, raw_content TEXT, injection_position INT, injection_depth INT, injection_role INT, created_at INT, updated_at INT)`
   - `npc_links (id INTEGER PRIMARY KEY AUTOINCREMENT, npc_id TEXT, scope_type TEXT CHECK(scope_type IN ('chat','character','persona','global')), target_id TEXT, relationship_summary TEXT, is_active INT DEFAULT 1, created_at INT, UNIQUE(npc_id, scope_type, target_id))`
 - **Scoping Rules:**
   - **Chat Scope (Default):** `scope_type = 'chat'`, `target_id = SillyTavern.getContext().chatId`.

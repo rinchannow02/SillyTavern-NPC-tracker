@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (Milestone 2: Multi-Scope & Prompt Injection)
+ * @description Entry point for SillyTavern-NPC-tracker (Milestone 3: Dynamic Block Editor & Groups)
  */
 
 import {
@@ -13,6 +13,7 @@ import {
     unlinkNpcScope,
     getNpcScopes,
     setNpcScopeStatus,
+    getNpcGroups,
     getActiveContextNpcs,
     queryAll,
     exportDatabaseToJson,
@@ -26,6 +27,12 @@ import {
     renderNpcSheet,
     INJECTION_KEY,
 } from './src/injection.js';
+
+import {
+    initEditorModal,
+    openNpcEditorModal,
+    closeNpcEditorModal,
+} from './src/ui/editor.js';
 
 export const MODULE_NAME = 'npc_tracker';
 
@@ -100,19 +107,33 @@ function updateDrawerStats() {
         if (quickListContainer.length) {
             const { DOMPurify } = SillyTavern.libs;
             if (activeNpcs.length === 0) {
-                quickListContainer.html('<div class="st-npc-empty-notice">No NPCs linked to active context.</div>');
+                quickListContainer.html('<div class="st-npc-empty-notice">No NPCs linked to active context. Click "+ New NPC" to create one.</div>');
             } else {
-                const itemsHtml = activeNpcs.slice(0, 5).map((npc) => {
+                const itemsHtml = activeNpcs.slice(0, 10).map((npc) => {
                     const safeName = DOMPurify.sanitize(npc.name || 'Unnamed NPC');
                     const safeScope = DOMPurify.sanitize(npc.scope_type || 'scope');
+                    const safeGroup = npc.group_name ? DOMPurify.sanitize(npc.group_name) : '';
                     return `
-                        <div class="st-npc-mini-card" data-npc-id="${npc.id}">
-                            <span class="st-npc-mini-name"><i class="fa-solid fa-user"></i> ${safeName}</span>
-                            <span class="st-npc-mini-scope">${safeScope}</span>
+                        <div class="st-npc-mini-card" data-npc-id="${npc.id}" title="Click to edit NPC sheet">
+                            <span class="st-npc-mini-name">
+                                <i class="fa-solid fa-user"></i> ${safeName}
+                            </span>
+                            <div class="st-npc-mini-meta">
+                                ${safeGroup ? `<span class="st-npc-badge group"><i class="fa-solid fa-users"></i> ${safeGroup}</span>` : ''}
+                                <span class="st-npc-mini-scope">${safeScope}</span>
+                            </div>
                         </div>
                     `;
                 }).join('');
                 quickListContainer.html(itemsHtml);
+
+                // Bind click on card to open Editor modal
+                quickListContainer.find('.st-npc-mini-card').on('click', function () {
+                    const npcId = $(this).data('npc-id');
+                    if (npcId) {
+                        openNpcEditorModal(npcId);
+                    }
+                });
             }
         }
 
@@ -210,6 +231,11 @@ async function renderSettingsDrawer(settings) {
             syncPromptInjection(settings);
         });
 
+        // Bind + New NPC button to open Editor modal
+        $('#st_npc_btn_open_editor').off('click').on('click', () => {
+            openNpcEditorModal(null);
+        });
+
         // Bind Create Test NPC button
         $('#st_npc_btn_create_test').off('click').on('click', () => {
             try {
@@ -231,6 +257,8 @@ async function renderSettingsDrawer(settings) {
                     {
                         name: `Test NPC #${randomNum}`,
                         aliases: `Traveler, Wanderer_${randomNum}`,
+                        group_name: 'Wayfarers',
+                        location_keywords: 'tavern, crossroads, highway',
                         blocks: [
                             { id: 'appearance', label: 'Appearance', type: 'text', value: 'Dressed in travel-stained travelling cloaks.' },
                             { id: 'personality', label: 'Personality', type: 'text', value: 'Observant, cautious, speaks in soft whispers.' },
@@ -345,6 +373,9 @@ jQuery(async () => {
         const extensionBaseUrl = new URL('.', import.meta.url).href;
         const db = await initDatabase(extensionBaseUrl);
 
+        // Initialize NPC Sheet Editor modal
+        await initEditorModal(updateDrawerStats);
+
         // Expose debug & console verification API
         window.ST_NPC_Tracker = {
             db,
@@ -357,6 +388,7 @@ jQuery(async () => {
             unlinkNpcScope,
             getNpcScopes,
             setNpcScopeStatus,
+            getNpcGroups,
             getActiveContextNpcs,
             queryAll,
             exportJson: exportDatabaseToJson,
@@ -365,6 +397,8 @@ jQuery(async () => {
             clearPromptInjection,
             getLastInjectedPrompt,
             renderNpcSheet,
+            openNpcEditorModal,
+            closeNpcEditorModal,
             updateDrawerStats,
         };
 
@@ -384,7 +418,7 @@ jQuery(async () => {
             }
         }
 
-        console.log('[NPC Tracker] Milestone 2 (v2) initialized successfully.');
+        console.log('[NPC Tracker] Milestone 3 (v3) initialized successfully.');
     } catch (err) {
         console.error('[NPC Tracker] Initialization failed:', err);
     }
