@@ -1,7 +1,7 @@
 # SillyTavern-NPC-tracker Specification
 
 ## Overview
-A client-side SillyTavern UI Extension that tracks NPCs separately from World Info using an in-browser SQLite database (`sql.js` persisted to IndexedDB via `SillyTavern.libs.localforage`).
+A client-side SillyTavern UI Extension that tracks NPCs separately from World Info using an in-browser SQLite database (`sql.js` WASM persisted to IndexedDB via `SillyTavern.libs.localforage` under key `st_npc_tracker_sqlite_db`).
 
 ## Core Pillars
 
@@ -22,13 +22,14 @@ A client-side SillyTavern UI Extension that tracks NPCs separately from World In
   - User-editable Extraction Prompt & Output Template.
   - Configurable Scanner Behavior: `scanDepth` (number of recent messages to analyze), trigger mode (`manual`, `every_n_messages`, `on_keyword`), and update mode (`create_new_only`, `merge_existing`, `ask_before_apply`).
 
-### Pillar 3: Relational NPC Management & Multi-Linking
+### Pillar 3: Multi-Scope Linking & Prompt Injection
 - **Database Schema (`sql.js`):**
-  - `npcs`: `id TEXT PRIMARY KEY, name TEXT, avatar TEXT, template_mode TEXT, blocks_json TEXT, raw_content TEXT, injection_position INT, injection_depth INT, injection_role INT, created_at INT, updated_at INT`
-  - `npc_links`: `id INTEGER PRIMARY KEY AUTOINCREMENT, npc_id TEXT, scope_type TEXT CHECK(scope_type IN ('chat', 'character', 'persona', 'global')), target_id TEXT, relationship_summary TEXT, is_active INTEGER DEFAULT 1`
+  - `npcs (id TEXT PRIMARY KEY, name TEXT, aliases TEXT, avatar TEXT, template_mode TEXT, blocks_json TEXT, raw_content TEXT, injection_position INT, injection_depth INT, injection_role INT, created_at INT, updated_at INT)`
+  - `npc_links (id INTEGER PRIMARY KEY AUTOINCREMENT, npc_id TEXT, scope_type TEXT CHECK(scope_type IN ('chat','character','persona','global')), target_id TEXT, relationship_summary TEXT, is_active INT DEFAULT 1, created_at INT, UNIQUE(npc_id, scope_type, target_id))`
 - **Scoping Rules:**
   - **Chat Scope (Default):** `scope_type = 'chat'`, `target_id = SillyTavern.getContext().chatId`.
   - **Character Scope:** `scope_type = 'character'`, `target_id = character.avatar`.
-  - **Persona Scope:** `scope_type = 'persona'`, `target_id = user_avatar`.
-  - Many-to-many support: A single NPC record can be linked to multiple characters, personas, or specific chats simultaneously.
-- **Prompt Injection:** Active NPCs for the current context (matching active `chatId`, `characterId`, or `persona`) are formatted and injected via `setExtensionPrompt('npc_tracker', ...)` when scanned or pinned.
+  - **Persona Scope:** `scope_type = 'persona'`, `target_id = persona_selected`.
+  - **Global Scope:** `scope_type = 'global'`, `target_id = 'global'`.
+  - **Many-to-Many Linking:** A single NPC record can be linked simultaneously across multiple Characters, Personas, or specific Chats.
+- **Prompt Injection:** Active NPCs for current context (matching active `chatId`, `character.avatar`, `persona_selected`, or `global`) are formatted and injected via `setExtensionPrompt('npc_tracker', ...)` when active or pinned.

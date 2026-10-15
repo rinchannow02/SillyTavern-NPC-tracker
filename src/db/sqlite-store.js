@@ -12,7 +12,7 @@ let debouncedSave = null;
 
 /**
  * Dynamically loads sql.js WASM runtime if not already present on window.
- * @param {string} extensionBaseUrl - Base URL of this extension folder.
+ * @param {string} [extensionBaseUrl] - Base URL of this extension folder.
  * @returns {Promise<any>} The initialized SQL namespace.
  */
 async function loadSqlJsRuntime(extensionBaseUrl) {
@@ -111,7 +111,7 @@ export function scheduleDatabaseSave() {
 
 /**
  * Initializes the SQLite database from IndexedDB or creates a fresh instance.
- * @param {string} extensionBaseUrl
+ * @param {string} [extensionBaseUrl]
  * @returns {Promise<any>} The sql.js Database instance.
  */
 export async function initDatabase(extensionBaseUrl) {
@@ -158,18 +158,40 @@ export function queryAll(sql, params = []) {
 }
 
 /**
+ * Retrieves a single NPC by ID, including its associated links and parsed blocks.
+ * @param {string} id - The NPC UUID.
+ * @returns {Object|null}
+ */
+export function getNpcById(id) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    const rows = queryAll('SELECT * FROM npcs WHERE id = ? LIMIT 1', [id]);
+    if (!rows.length) return null;
+
+    const npc = rows[0];
+    const links = queryAll('SELECT * FROM npc_links WHERE npc_id = ? ORDER BY id ASC', [id]);
+    return {
+        ...npc,
+        blocks: JSON.parse(npc.blocks_json || '[]'),
+        links,
+    };
+}
+
+/**
  * Creates a new NPC and links it to the current Chat by default (unless explicit links are passed).
  * @param {Object} npcData
- * @param {string} npcData.name
+ * @param {string} [npcData.name]
  * @param {string} [npcData.aliases]
  * @param {string} [npcData.avatar]
  * @param {'basic'|'template'} [npcData.template_mode]
  * @param {Array<Object>} [npcData.blocks]
  * @param {string} [npcData.raw_content]
+ * @param {number} [npcData.injection_position]
+ * @param {number} [npcData.injection_depth]
+ * @param {number} [npcData.injection_role]
  * @param {Array<{scope_type: string, target_id: string, relationship_summary?: string}>} [links]
  * @returns {string} The newly created NPC UUID.
  */
-export function createNpc(npcData, links = []) {
+export function createNpc(npcData = {}, links = []) {
     if (!db) throw new Error('[NPC Tracker] Database not initialized.');
 
     const context = SillyTavern.getContext();
@@ -222,7 +244,100 @@ export function createNpc(npcData, links = []) {
 }
 
 /**
- * Retrieves all NPCs linked to the currently active Chat, Character, or Persona.
+ * Updates an existing NPC's fields.
+ * @param {string} id - The NPC UUID.
+ * @param {Object} updates - Key/value pairs to update.
+ */
+export function updateNpc(id, updates = {}) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+
+    const fields = [];
+    const values = [];
+
+    const allowedKeys = [
+        'name',
+        'aliases',
+        'avatar',
+        'template_mode',
+        'raw_content',
+        'injection_position',
+        'injection_depth',
+        'injection_role',
+    ];
+
+    for (const key of allowedKeys) {
+        if (updates[key] !== undefined) {
+            fields.push(`${key} = ?`);
+            values.push(updates[key]);
+        }
+    }
+
+    if (updates.blocks !== undefined) {
+        fields.push('blocks_json = ?');
+        values.push(JSON.stringify(updates.blocks));
+    } else if (updates.blocks_json !== undefined) {
+        fields.push('blocks_json = ?');
+        values.push(updates.blocks_json);
+    }
+
+    if (fields.length === 0) return;
+
+    const now = Date.now();
+    fields.push('updated_at = ?');
+    values.push(now);
+
+    values.push(id);
+    db.run(`UPDATE npcs SET ${fields.join(', ')} WHERE id = ?`, values);
+    scheduleDatabaseSave();
+}
+
+/**
+ * Deletes an NPC and all its associated links.
+ * @param {string} id - The NPC UUID.
+ */
+export function deleteNpc(id) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    db.run('DELETE FROM npc_links WHERE npc_id = ?', [id]);
+    db.run('DELETE FROM npcs WHERE id = ?', [id]);
+    scheduleDatabaseSave();
+}
+
+/**
+ * Links an NPC to a specific scope (chat, character, persona, global).
+ * @param {string} npcId
+ * @param {string} scopeType
+ * @param {string} targetId
+ * @param {string} [relationshipSummary]
+ */
+export function linkNpcScope(npcId, scopeType, targetId, relationshipSummary = '') {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    const now = Date.now();
+    db.run(
+        `INSERT OR REPLACE INTO npc_links (
+            npc_id, scope_type, target_id, relationship_summary, is_active, created_at
+        ) VALUES (?, ?, ?, ?, 1, ?)`,
+        [npcId, scopeType, String(targetId), relationshipSummary, now]
+    );
+    scheduleDatabaseSave();
+}
+
+/**
+ * Unlinks an NPC from a specific scope.
+ * @param {string} npcId
+ * @param {string} scopeType
+ * @param {string} targetId
+ */
+export function unlinkNpcScope(npcId, scopeType, targetId) {
+    if (!db) throw new Error('[NPC Tracker] Database not initialized.');
+    db.run(
+        `DELETE FROM npc_links WHERE npc_id = ? AND scope_type = ? AND target_id = ?`,
+        [npcId, scopeType, String(targetId)]
+    );
+    scheduleDatabaseSave();
+}
+
+/**
+ * Retrieves all NPCs linked to the currently active Chat, Character, Persona, or Global scope.
  * @returns {Array<Object>}
  */
 export function getActiveContextNpcs() {

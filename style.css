@@ -71,10 +71,57 @@
 .st-npc-actions .menu_button {
     cursor: pointer;
     flex: 1;
-    min-width: 140px;
+    min-width: 130px;
     text-align: center;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    padding: 8px 12px;
+}
+
+.st-npc-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.st-npc-empty-notice {
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.7;
+    text-align: center;
+    padding: 6px 0;
+}
+
+.st-npc-mini-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85em;
+    transition: background 0.2s ease;
+}
+
+.st-npc-mini-card:hover {
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.st-npc-mini-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.st-npc-mini-scope {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    text-transform: uppercase;
 }

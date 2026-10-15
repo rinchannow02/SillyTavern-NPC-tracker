@@ -1,3 +1,5 @@
+/// <reference path="../../../global.d.ts" />
+
 /**
  * @file global.d.ts
  * @description Ambient TypeScript type declarations for SillyTavern UI Extension environment.
@@ -80,11 +82,17 @@ interface Window {
     ST_NPC_Tracker?: {
         db: any;
         settings: any;
-        createNpc: Function;
-        getActiveContextNpcs: Function;
-        queryAll: Function;
-        exportJson: Function;
-        importJson: Function;
+        createNpc: (npcData: any, links?: any[]) => string;
+        updateNpc: (id: string, updates: any) => void;
+        deleteNpc: (id: string) => void;
+        getNpcById: (id: string) => any;
+        linkNpcScope: (npcId: string, scopeType: string, targetId: string, relationshipSummary?: string) => void;
+        unlinkNpcScope: (npcId: string, scopeType: string, targetId: string) => void;
+        getActiveContextNpcs: () => any[];
+        queryAll: (sql: string, params?: any[]) => any[];
+        exportJson: () => string;
+        importJson: (jsonString: string) => Promise<any>;
+        updateDrawerStats: () => void;
     };
     toastr?: any;
     DOMPurify?: any;

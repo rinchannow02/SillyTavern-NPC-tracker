@@ -14,6 +14,7 @@ description: "Prevents file overwrite conflicts and establishes clear boundaries
   - `index.js`
   - `manifest.json`
   - `docs/STATE.md`
+  - `src/contracts.js`
   - Root configuration files or global rules
 - If a Worker Agent creates new functions, classes, or event handlers that need to be wired into `index.js`, it MUST document the exact import path and call signature in its final response.
 - The **Coordinator Agent** alone is responsible for wiring worker exports into `index.js` and updating `docs/STATE.md`.

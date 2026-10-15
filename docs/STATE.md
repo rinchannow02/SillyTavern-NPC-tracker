@@ -8,19 +8,23 @@
 ## Milestone & Branch Matrix
 | Milestone | Branch | Status | Scope Summary |
 | :--- | :--- | :--- | :--- |
-| **Milestone 1** | `v1` | `COMPLETED` | `manifest.json`, `global.d.ts`, `index.js`, `src/db/sqlite-store.js` (`sql.js` + `localforage`) |
-| **Milestone 2** | `v2` | `LOCKED` | `npc_links` queries for Chat/Character/Persona, `setExtensionPrompt` hook on `CHAT_CHANGED` |
-| **Milestone 3** | `v3` | `LOCKED` | UI drawer/modal, Basic Block Mode + Blank Template Mode, `DOMPurify` sanitization |
-| **Milestone 4** | `v4` | `LOCKED` | `ConnectionManagerRequestService` + `generateQuietPrompt`, custom extraction prompt, scan depth |
+| **Milestone 1** | `v1` | `COMPLETED` | `manifest.json`, `global.d.ts`, `index.js`, `style.css`, `src/contracts.js`, `src/db/sqlite-store.js` (`sql.js` + `localforage`), Extensions drawer UI with Test NPC & JSON export |
+| **Milestone 2** | `v2` | `READY` | Multi-Scope Link Manager (Chat/Character/Persona/Global), `setExtensionPrompt` prompt injector, `CHAT_CHANGED` auto-query |
+| **Milestone 3** | `v3` | `LOCKED` | Dynamic Block Editor UI, Custom Templates, `DOMPurify` sanitized rendering |
+| **Milestone 4** | `v4` | `LOCKED` | LLM Chat Scanner & `ConnectionManagerRequestService` integration |
 
 ## Milestone 1 Task Checklist (`v1`)
 - [x] Initialize Git repository with `main`, `staging`, and checkout `v1` from `staging`
-- [x] Create `manifest.json` and `global.d.ts`
-- [x] Implement `src/db/sqlite-store.js` (`sql.js` WASM loader, schema init, debounced `localforage` save, JSON import/export)
-- [x] Implement `index.js` bootstrap, settings initialization, and Extensions UI drawer wiring
-- [x] Verify DB persistence in SillyTavern browser console & UI drawer rendering at http://127.0.0.1:8000
+- [x] Set remote `origin` to `https://github.com/rinchannow02/SillyTavern-NPC-tracker.git`
+- [x] Scaffold Antigravity Agent Control Plane (`GEMINI.md`, `docs/SPEC.md`, `docs/STATE.md`, `.agents/rules/*`, `.agents/workflows/*`, subfolder `GEMINI.md` lane contracts)
+- [x] Create `manifest.json` and `global.d.ts` (with `/// <reference path="../../../global.d.ts" />` and window types)
+- [x] Implement `src/contracts.js` defining shared JSDoc contracts (`NpcRecord`, `NpcBlock`, `NpcScopeLink`, `ScannerConfig`) and lane interfaces
+- [x] Implement `src/db/sqlite-store.js` (`sql.js` WASM loader from CDN, schema init, debounced `localforage` save, CRUD, scoping, JSON import/export)
+- [x] Implement `index.js` bootstrap, settings initialization, collapsible Extensions UI drawer in `#extensions_settings2`, and buttons for **Create Test NPC** and **Export DB JSON**
+- [x] Verified zero 404s and successful live activation in SillyTavern Docker instance at `http://127.0.0.1:8000` (console: `[NPC Tracker] Milestone 1 (v1) initialized successfully.`, `typeof window.ST_NPC_Tracker === 'object'`)
 
 ## Active Decisions & Constraints
 - Module Name: `npc_tracker`
 - CSS Prefix: `st-npc-`
 - Storage Key in `localforage`: `st_npc_tracker_sqlite_db`
+- Coordinator-Only Files: `index.js`, `manifest.json`, `docs/STATE.md`, `src/contracts.js`
