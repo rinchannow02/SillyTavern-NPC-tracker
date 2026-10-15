@@ -49,12 +49,12 @@ Do you love having recurring secondary characters in your stories? Tired of trac
 ### NPC Tracker Settings & Scanner Panel
 Configure scan depth, connection profile routing, trigger intervals, and view active NPCs linked to your current context.
 
-*(Screenshots can be added here)*
+![Main Dashboard UI](screenshots/npc-tracker.png)
 
 ### NPC Sheet Editor Modal
 Edit physical traits, demeanor tags, pairwise character relationships, and assign scope links.
 
-*(Screenshots can be added here)*
+![NPC Sheet Editor Modal](screenshots/npc-sheet.png)
 
 </details>
 
