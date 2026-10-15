@@ -38,6 +38,7 @@ import {
     scanRecentChat,
     getConnectionProfiles,
     evaluateSettingAwareTriggers,
+    DEFAULT_EXTRACTION_PROMPT,
 } from './src/scanner/chat-scanner.js';
 
 export const MODULE_NAME = 'npc_tracker';
@@ -54,6 +55,8 @@ const DEFAULT_SETTINGS = Object.freeze({
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
         scanDepth: 10,
+        maxTokens: 800,
+        temperature: 0.2,
         triggerMode: 'manual', // 'manual' | 'every_n_messages' | 'on_keyword'
         everyNMessages: 5,
         updateMode: 'merge_existing', // 'create_new_only' | 'merge_existing'
@@ -220,7 +223,7 @@ async function onMessageReceived() {
  */
 async function renderSettingsDrawer(settings) {
     const context = SillyTavern.getContext();
-    const settingsUrl = new URL('./src/ui/settings.html', import.meta.url).href;
+    const settingsUrl = new URL('./src/ui/settings.html', import.meta.url).href + '?t=' + Date.now();
 
     try {
         const response = await fetch(settingsUrl);
@@ -289,15 +292,35 @@ async function renderSettingsDrawer(settings) {
         // ==========================================
         const scannerSettings = settings.scanner || {};
 
-        // Scanner Profile Dropdown
+        // Scanner Profile Dropdown & Refresh
         const profileSelect = $('#st_npc_scanner_profile');
-        const profiles = getConnectionProfiles();
-        profileSelect.empty();
-        profileSelect.append('<option value="">Active SillyTavern API</option>');
-        for (const p of profiles) {
-            profileSelect.append(`<option value="${p.id}">${p.name} (${p.id})</option>`);
+        function refreshProfilesDropdown() {
+            const currentVal = scannerSettings.connectionProfileId || profileSelect.val() || '';
+            const profiles = getConnectionProfiles();
+            profileSelect.empty();
+            profileSelect.append('<option value="">Active SillyTavern API</option>');
+            for (const p of profiles) {
+                profileSelect.append(`<option value="${p.id}">${p.name}</option>`);
+            }
+            if (currentVal) {
+                profileSelect.val(currentVal);
+            }
         }
-        profileSelect.val(scannerSettings.connectionProfileId || '');
+
+        refreshProfilesDropdown();
+        setTimeout(refreshProfilesDropdown, 500);
+        setTimeout(refreshProfilesDropdown, 1500);
+        setTimeout(refreshProfilesDropdown, 3000);
+
+        profileSelect.off('focus mousedown').on('focus mousedown', refreshProfilesDropdown);
+        $(document).off('click', '#st_npc_scanner_refresh_profiles').on('click', '#st_npc_scanner_refresh_profiles', (e) => {
+            e.preventDefault();
+            refreshProfilesDropdown();
+            if (window.toastr) {
+                window.toastr.info('Connection profiles reloaded.');
+            }
+        });
+
         profileSelect.off('change').on('change', () => {
             scannerSettings.connectionProfileId = String(profileSelect.val());
             context.saveSettingsDebounced();
@@ -312,6 +335,7 @@ async function renderSettingsDrawer(settings) {
         scannerEnabledCheckbox.off('change').on('change', () => {
             scannerSettings.enabled = scannerEnabledCheckbox.prop('checked');
             if (scannerSettings.enabled) {
+                refreshProfilesDropdown();
                 $('#st_npc_scanner_controls').slideDown(150);
             } else {
                 $('#st_npc_scanner_controls').slideUp(150);
@@ -343,6 +367,22 @@ async function renderSettingsDrawer(settings) {
             context.saveSettingsDebounced();
         });
 
+        // Scanner Max Output Tokens
+        const scannerMaxTokensInput = $('#st_npc_scanner_max_tokens');
+        scannerMaxTokensInput.val(scannerSettings.maxTokens ?? 800);
+        scannerMaxTokensInput.off('change').on('change', () => {
+            scannerSettings.maxTokens = parseInt(String(scannerMaxTokensInput.val()), 10) || 800;
+            context.saveSettingsDebounced();
+        });
+
+        // Scanner Temperature
+        const scannerTempInput = $('#st_npc_scanner_temperature');
+        scannerTempInput.val(scannerSettings.temperature ?? 0.2);
+        scannerTempInput.off('change').on('change', () => {
+            scannerSettings.temperature = parseFloat(String(scannerTempInput.val())) ?? 0.2;
+            context.saveSettingsDebounced();
+        });
+
         // Scanner Every N Messages
         const scannerEveryNInput = $('#st_npc_scanner_every_n');
         scannerEveryNInput.val(scannerSettings.everyNMessages ?? 5);
@@ -369,6 +409,37 @@ async function renderSettingsDrawer(settings) {
             updateDrawerStats();
         });
 
+        // Custom Scanner Prompt Textarea & Toggle
+        const promptTextarea = $('#st_npc_scanner_prompt');
+        promptTextarea.val(scannerSettings.customPrompt || DEFAULT_EXTRACTION_PROMPT);
+        promptTextarea.off('input change').on('input change', () => {
+            scannerSettings.customPrompt = String(promptTextarea.val());
+            context.saveSettingsDebounced();
+        });
+
+        $(document).off('click', '#st_npc_scanner_prompt_toggle').on('click', '#st_npc_scanner_prompt_toggle', (e) => {
+            e.preventDefault();
+            const body = $('#st_npc_scanner_prompt_body');
+            const chevron = $('#st_npc_prompt_chevron');
+            if (body.is(':visible')) {
+                body.slideUp(150);
+                chevron.css('transform', 'rotate(0deg)');
+            } else {
+                body.slideDown(150);
+                chevron.css('transform', 'rotate(90deg)');
+            }
+        });
+
+        $(document).off('click', '#st_npc_btn_reset_prompt').on('click', '#st_npc_btn_reset_prompt', (e) => {
+            e.preventDefault();
+            promptTextarea.val(DEFAULT_EXTRACTION_PROMPT);
+            scannerSettings.customPrompt = DEFAULT_EXTRACTION_PROMPT;
+            context.saveSettingsDebounced();
+            if (window.toastr) {
+                window.toastr.success('Extraction prompt reset to default.');
+            }
+        });
+
         // Scan Recent Chat Now Button
         $('#st_npc_btn_scan_now').off('click').on('click', async () => {
             const btn = $('#st_npc_btn_scan_now');
@@ -377,11 +448,11 @@ async function renderSettingsDrawer(settings) {
 
             btn.prop('disabled', true);
             btnText.html('<i class="fa-solid fa-spinner fa-spin"></i> Scanning Chat...');
-            badge.removeClass('info success warning').addClass('warning').textContent = 'Scanning...';
+            badge.removeClass('info success warning').addClass('warning').text('Scanning...');
 
             try {
                 const result = await scanRecentChat();
-                badge.removeClass('warning').addClass('success').textContent = 'Completed';
+                badge.removeClass('warning').addClass('success').text('Completed');
                 updateDrawerStats();
 
                 if (window.toastr) {
@@ -389,7 +460,7 @@ async function renderSettingsDrawer(settings) {
                 }
             } catch (err) {
                 console.error('[NPC Tracker] Scan error:', err);
-                badge.removeClass('warning success').addClass('info').textContent = 'Error';
+                badge.removeClass('warning success').addClass('info').text('Error');
                 if (window.toastr) {
                     window.toastr.error(`Scan failed: ${err.message}`);
                 }
