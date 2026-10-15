@@ -1,50 +1,104 @@
-# SillyTavern-NPC-tracker
+# SillyTavern NPC Tracker
 
-Yet another SillyTavern extension to track NPC and their profiles. 
+A lightweight, focused in-browser NPC database and dynamic prompt injection extension for [SillyTavern](https://github.com/SillyTavern/SillyTavern).
 
-Do you like having NPCs in your chat? Tired of tracking them manually through World Info? Want a simple yet capable extension that does one job and does it well? Well, you're in luck! NPC Tracker is your answer!
+Do you love having recurring secondary characters in your stories? Tired of tracking them manually through sprawling World Info lorebooks? Don't want the clunkiness of full group chats or bloated character cards?
 
-## Install
+**NPC Tracker** is designed to do one job and do it well: keep track of your Non-Player Characters, store their details in a fast local SQLite database, and dynamically inject them into your prompt only when they are relevant to the scene.
 
-In SillyTavern, open Extensions, click Install Extension, paste this URL, and confirm:
+---
 
-```
-https://github.com/rinchannow02/SillyTavern-NPC-tracker
-```
-## Features
+## 📦 Installation
 
-- Simple yet robust SQLite-base database
-- Interactive or manual entries for power user
-- Optional automatic entries with LLM
-- Familiar world info-like mechanisms for activation and deactivation
-- Limited scope of features so it's actually useful
+1. In SillyTavern, open the **Extensions** menu (the cube icon in the top navigation bar).
+2. Click **Install Extension**.
+3. Paste the repository URL:
+   ```text
+   https://github.com/rinchannow02/SillyTavern-NPC-tracker
+   ```
+4. Click **Install** and confirm. Reload SillyTavern if prompted.
 
-## Screenshot
-TODO, COLLAPSIBLE TAB
+---
 
-## Why I built this?
+## ✨ Features
 
-I like having NPCs but doesn't want to use group chats due to how wonky it is. A dedicated character card with multiple characters often ends up bloated and filling the context window with unnecessary information. World Info is great for lore, but not so much for characters that frequently appear in chats. I want something in between and this is what I got.
+- **Robust In-Browser SQLite Database:** Runs on pure client-side WebAssembly (`sql.js`) and persists automatically to IndexedDB via `localforage`. No Node.js server dependencies or external databases required.
+- **Multi-Scope Scoping:** Link NPCs to an active **Chat**, **Character**, **User Persona**, or **Global** scope so characters only appear in the stories they belong to.
+- **Dynamic Sheet Editor:**
+  - **Modular Block Mode:** Reorderable, customizable attribute blocks (Appearance, Personality, Relationships, or custom details).
+  - **Freeform Template Mode:** Full Markdown and Handlebars support (`{{name}}`, `{{group}}`, `{{location}}`, `{{appearance}}`, etc.) for complete formatting control.
+- **Automated LLM Chat Scanner:**
+  - Automatically analyzes recent dialogue to extract newly introduced or updated NPCs.
+  - Can be triggered manually, periodically ("Every N Messages"), or on keyword matches.
+  - Flexible API routing: use your active SillyTavern API or route extraction through any dedicated SillyTavern **Connection Profile** (e.g., lightweight, cost-effective models).
+  - Fine-grained controls: customizable extraction prompt, adjustable sampling temperature, and configurable output token limits.
+- **Setting-Aware Selective Injection:**
+  - Optionally filters prompt injection based on the current scene setting (compound Place + NPC triggers).
+  - Keeps your context window lean by only injecting NPCs when their location keywords, name, or aliases match the recent conversation.
+- **Full Data Portability:** One-click JSON database export and import for seamless backups and sharing between devices.
 
-# Recommendations
+---
 
-TODO
-Create a separate preset and connection profile for tool. Make sure "Request model reasoning" turned off and "Reasoning Effort" set to minimum. Could cause issues with some model that has permanent reasoning.
-Alternatively, set max output token higher (4000 to 8000 tokens for reasoning budget)
-Works well with https://github.com/elana-voss/SillyTavern-Extension-NPCNames to stop the LLM from picking yet another Tanaka or Marcus.
+## 📸 Screenshots
 
-## Alternatives
+<details>
+<summary><b>Click to expand screenshots</b></summary>
 
-This extension is created with a limited scope for NPC management only.
+<br>
 
-For a much advanced automated scene sumarizer that helps with creating world info entries, consider:
-- https://github.com/aikohanasaki/SillyTavern-MemoryBooks
-- https://github.com/bmen25124/SillyTavern-WorldInfo-Recommender
+### NPC Tracker Settings & Scanner Panel
+Configure scan depth, connection profile routing, trigger intervals, and view active NPCs linked to your current context.
 
-## Contributing
+*(Screenshots can be added here)*
 
-TODO
+### NPC Sheet Editor Modal
+Edit physical traits, demeanor tags, pairwise character relationships, and assign scope links.
 
-## License
+*(Screenshots can be added here)*
 
-TODO
+</details>
+
+---
+
+## 💡 Why I Built This
+
+I enjoy having living worlds populated with recurring side characters, but existing solutions didn't quite fit my workflow:
+- **Group Chats:** Often feel clunky and awkward for incidental characters who only pop in for a few lines.
+- **Multi-Character Cards:** Stuffing multiple character definitions into a single character card rapidly bloats the context window with information that isn't relevant to the current scene.
+- **World Info / Lorebooks:** Great for static world lore, but cumbersome for tracking fluid character details, relationship changes, and dialogue-driven updates.
+
+NPC Tracker provides a focused middle ground: a dedicated manager that records who characters are, updates them as the story progresses, and injects their profiles into the prompt only when they are physically present.
+
+---
+
+## ⚙️ Recommended Setup & Best Practices
+
+### 1. Dedicated Connection Profile for the Scanner
+For the best speed and lowest token consumption, set up a separate Connection Profile in SillyTavern specifically for extraction tools:
+- **Fast / Lightweight Models:** Models like `GLM-5.2`, `GLM-5.3-Flash`, `Claude 3.5 Haiku`, or `GPT-4o-mini` excel at structured JSON extraction.
+- **Reasoning / Thinking Models:** If using reasoning models (such as GLM Flash or DeepSeek R1), ensure:
+  - **Reasoning Effort** is set to `low` / `none` (or disabled) in the model's preset, **or**
+  - **Max Output Tokens** in the scanner settings is set sufficiently high (`3000`–`4000`+) so the internal reasoning process doesn't exhaust the token budget before the JSON payload is generated.
+
+### 2. Complementary Extensions
+- [SillyTavern-Extension-NPCNames](https://github.com/elana-voss/SillyTavern-Extension-NPCNames): Helps keep NPC names unique and creative, preventing the LLM from constantly reusing generic names like "Tanaka" or "Marcus."
+
+---
+
+## 🧭 Alternatives
+
+This extension is deliberately built with a tight, focused scope for NPC profile management and contextual injection. If you are looking for broader automated scene summarization or automated World Info generation, consider these comprehensive extensions:
+- [SillyTavern-MemoryBooks](https://github.com/aikohanasaki/SillyTavern-MemoryBooks)
+- [SillyTavern-WorldInfo-Recommender](https://github.com/bmen25124/SillyTavern-WorldInfo-Recommender)
+
+---
+
+## 🤝 Contributing
+
+Contributions, suggestions, and bug reports are welcome! Feel free to open an issue or submit a pull request on GitHub.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
