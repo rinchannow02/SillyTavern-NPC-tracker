@@ -553,3 +553,14 @@
     padding: 8px 12px;
     font-weight: 500;
 }
+
+.st-npc-scanner-prompt-wrapper {
+    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.st-npc-prompt-toggle-header:hover {
+    color: var(--SmartThemeQuoteColor, #70a5ff);
+}

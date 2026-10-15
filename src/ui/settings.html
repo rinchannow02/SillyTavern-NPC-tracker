@@ -66,9 +66,14 @@
                 <div class="st-npc-scanner-body" id="st_npc_scanner_controls" style="display: none;">
                     <div class="st-npc-form-group">
                         <label for="st_npc_scanner_profile"><b>Connection Profile:</b></label>
-                        <select id="st_npc_scanner_profile" class="text_pole">
-                            <option value="">Active SillyTavern API</option>
-                        </select>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <select id="st_npc_scanner_profile" class="text_pole" style="flex: 1;">
+                                <option value="">Active SillyTavern API</option>
+                            </select>
+                            <button type="button" class="menu_button menu_button_icon" id="st_npc_scanner_refresh_profiles" title="Refresh Connection Profiles from SillyTavern" style="padding: 6px 10px;">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="st-npc-grid-row">
@@ -83,6 +88,17 @@
                         <div class="st-npc-grid-col">
                             <label for="st_npc_scanner_depth">Scan Depth (Msgs)</label>
                             <input id="st_npc_scanner_depth" type="number" min="2" max="50" class="text_pole" value="10" />
+                        </div>
+                    </div>
+
+                    <div class="st-npc-grid-row">
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_max_tokens">Max Output Tokens</label>
+                            <input id="st_npc_scanner_max_tokens" type="number" min="100" max="8192" step="50" class="text_pole" value="800" title="Max completion tokens (increase for reasoning/thinking models)" />
+                        </div>
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_temperature">Temperature</label>
+                            <input id="st_npc_scanner_temperature" type="number" min="0" max="2" step="0.05" class="text_pole" value="0.2" title="LLM sampling temperature (0.0 = deterministic)" />
                         </div>
                     </div>
 
@@ -105,6 +121,22 @@
                             <input id="st_npc_setting_aware_enabled" type="checkbox" class="checkbox" />
                             <span>Setting-Aware Selective Prompt Injection</span>
                         </label>
+                    </div>
+
+                    <div class="st-npc-scanner-prompt-wrapper" style="margin-top: 10px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px;">
+                        <div class="st-npc-prompt-toggle-header" id="st_npc_scanner_prompt_toggle" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                            <span><b><i class="fa-solid fa-chevron-right" id="st_npc_prompt_chevron" style="margin-right: 6px; transition: transform 0.2s;"></i> Custom Extraction Prompt</b></span>
+                            <span style="font-size: 0.8em; opacity: 0.7;">Click to edit</span>
+                        </div>
+                        <div id="st_npc_scanner_prompt_body" style="display: none; margin-top: 8px;">
+                            <textarea id="st_npc_scanner_prompt" class="text_pole" rows="8" style="width: 100%; font-family: monospace; font-size: 0.85em; resize: vertical;" placeholder="Custom extraction prompt..."></textarea>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                                <span class="st-npc-hint" style="font-size: 0.75em; opacity: 0.7;">Recent chat slice will be appended automatically.</span>
+                                <button type="button" class="menu_button" id="st_npc_btn_reset_prompt" style="font-size: 0.8em; padding: 3px 8px;">
+                                    <i class="fa-solid fa-rotate-left"></i> Reset to Default
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="st-npc-scanner-actions">

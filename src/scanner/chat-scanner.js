@@ -12,7 +12,7 @@ import {
 
 import { syncPromptInjection } from '../injection.js';
 
-const DEFAULT_EXTRACTION_PROMPT = `Analyze the recent roleplay messages and extract any secondary/tertiary Non-Player Characters (NPCs) mentioned or interacting in the scene.
+export const DEFAULT_EXTRACTION_PROMPT = `Analyze the recent roleplay messages and extract any secondary/tertiary Non-Player Characters (NPCs) mentioned or interacting in the scene.
 Do NOT extract the main user persona or the main character.
 For each NPC found, output a JSON array of objects with the following keys:
 - "name": string (Full or recognized name of the NPC)
@@ -44,18 +44,27 @@ Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block. Do NOT in
  */
 export function getConnectionProfiles() {
     try {
-        const context = SillyTavern.getContext();
-        const profiles = context.extensionSettings?.connection_manager?.profiles;
-        if (Array.isArray(profiles)) {
+        const context = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : {};
+        const ext = context.extensionSettings || (typeof window !== 'undefined' ? window.extension_settings : null) || {};
+        const cm = ext.connectionManager || ext.connection_manager;
+        let profiles = cm?.profiles;
+
+        if ((!profiles || (Array.isArray(profiles) && profiles.length === 0)) && context.ConnectionManagerRequestService?.getSupportedProfiles) {
+            try {
+                profiles = context.ConnectionManagerRequestService.getSupportedProfiles();
+            } catch (_) {}
+        }
+
+        if (Array.isArray(profiles) && profiles.length > 0) {
             return profiles.map((p) => ({
                 id: p.id || p.name,
                 name: p.name || p.id,
             }));
         }
-        if (profiles && typeof profiles === 'object') {
+        if (profiles && typeof profiles === 'object' && Object.keys(profiles).length > 0) {
             return Object.entries(profiles).map(([key, val]) => ({
-                id: key,
-                name: val.name || key,
+                id: val?.id || key,
+                name: val?.name || key,
             }));
         }
     } catch (err) {
@@ -68,6 +77,8 @@ export function getConnectionProfiles() {
  * Executes chat extraction by routing to either ConnectionManagerRequestService or active ST API.
  * @param {Object} [options]
  * @param {number} [options.scanDepth]
+ * @param {number} [options.maxTokens]
+ * @param {number} [options.temperature]
  * @param {string} [options.connectionProfileId]
  * @param {string} [options.customPrompt]
  * @param {string} [options.updateMode]
@@ -80,6 +91,8 @@ export async function scanRecentChat(options = {}) {
 
     const scanDepth = options.scanDepth ?? scannerSettings.scanDepth ?? 10;
     const profileId = options.connectionProfileId ?? scannerSettings.connectionProfileId ?? '';
+    const maxTokens = Math.min(8192, Math.max(100, parseInt(options.maxTokens ?? scannerSettings.maxTokens ?? 800, 10)));
+    const temperature = Math.min(2.0, Math.max(0.0, parseFloat(options.temperature ?? scannerSettings.temperature ?? 0.2)));
     const updateMode = options.updateMode ?? scannerSettings.updateMode ?? 'merge_existing';
     const basePrompt = options.customPrompt ?? scannerSettings.customPrompt ?? DEFAULT_EXTRACTION_PROMPT;
 
@@ -99,7 +112,7 @@ export async function scanRecentChat(options = {}) {
 
     const fullPrompt = `${basePrompt}\n\n### RECENT CHAT MESSAGES:\n${formattedChatHistory}`;
 
-    console.log(`[NPC Tracker] Scanning last ${recentSlice.length} messages for NPCs (Profile: ${profileId || 'Active ST API'})...`);
+    console.log(`[NPC Tracker] Scanning last ${recentSlice.length} messages for NPCs (Profile: ${profileId || 'Active ST API'}, maxTokens: ${maxTokens}, temp: ${temperature})...`);
 
     let rawResponse = '';
 
@@ -107,15 +120,25 @@ export async function scanRecentChat(options = {}) {
     if (profileId && context.ConnectionManagerRequestService) {
         try {
             console.log(`[NPC Tracker] Routing extraction via Connection Profile: ${profileId}`);
-            rawResponse = await context.ConnectionManagerRequestService.sendRequest(profileId, fullPrompt, 600, {
-                temperature: 0.2,
-            });
+            const result = await context.ConnectionManagerRequestService.sendRequest(
+                profileId,
+                fullPrompt,
+                maxTokens,
+                { stream: false, extractData: true },
+                { temperature, max_tokens: maxTokens }
+            );
+
+            if (typeof result === 'string') {
+                rawResponse = result;
+            } else if (result && typeof result === 'object') {
+                rawResponse = result.content ?? result.text ?? result.message ?? JSON.stringify(result);
+            }
         } catch (err) {
             console.warn(`[NPC Tracker] Connection profile request failed (${err.message}). Falling back to active ST API.`);
-            rawResponse = await requestViaActiveApi(fullPrompt);
+            rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
         }
     } else {
-        rawResponse = await requestViaActiveApi(fullPrompt);
+        rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
     }
 
     if (!rawResponse || typeof rawResponse !== 'string') {
@@ -209,16 +232,18 @@ export async function scanRecentChat(options = {}) {
 /**
  * Requests completion via the active SillyTavern API.
  * @param {string} prompt
+ * @param {number} [maxTokens=800]
+ * @param {number} [temperature=0.2]
  * @returns {Promise<string>}
  */
-async function requestViaActiveApi(prompt) {
+async function requestViaActiveApi(prompt, maxTokens = 800, temperature = 0.2) {
     const context = SillyTavern.getContext();
 
     if (typeof context.generateQuietPrompt === 'function') {
         return context.generateQuietPrompt({
             quietPrompt: prompt,
             skipWIAN: true,
-            responseLength: 700,
+            responseLength: maxTokens,
             removeReasoning: true,
         });
     }
@@ -227,7 +252,8 @@ async function requestViaActiveApi(prompt) {
         return context.generateRaw({
             prompt,
             systemPrompt: 'You are an accurate structured data extraction assistant. Return ONLY valid JSON.',
-            max_tokens: 700,
+            max_tokens: maxTokens,
+            temperature,
         });
     }
 
