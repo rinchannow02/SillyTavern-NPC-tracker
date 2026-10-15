@@ -47,19 +47,30 @@ export async function initEditorModal(onSaved) {
     modalInitialized = true;
 }
 
+let wasExtensionsDrawerOpen = false;
+
 /**
  * Binds robust delegated events for the modal dialog.
  */
 function bindModalEvents() {
+    // Prevent clicks/interactions inside modal dialog from closing SillyTavern drawers
+    $(document).off('click mousedown pointerdown', '#st_npc_modal_backdrop .st-npc-modal-dialog')
+        .on('click mousedown pointerdown', '#st_npc_modal_backdrop .st-npc-modal-dialog', (e) => {
+            e.stopPropagation();
+        });
+
     // Close / Cancel
     $(document).off('click', '#st_npc_modal_close_btn, #st_npc_modal_cancel_btn').on('click', '#st_npc_modal_close_btn, #st_npc_modal_cancel_btn', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         closeNpcEditorModal();
     });
 
     // Backdrop click
     $(document).off('click', '#st_npc_modal_backdrop').on('click', '#st_npc_modal_backdrop', (e) => {
         if ($(e.target).is('#st_npc_modal_backdrop')) {
+            e.preventDefault();
+            e.stopPropagation();
             closeNpcEditorModal();
         }
     });
@@ -150,6 +161,10 @@ function setEditorMode(mode) {
 export async function openNpcEditorModal(npcId = null) {
     await initEditorModal();
 
+    // Track whether extensions drawer is currently open so we can preserve it
+    const extBlock = $('#rm_extensions_block');
+    wasExtensionsDrawerOpen = extBlock.hasClass('openDrawer') || extBlock.is(':visible');
+
     currentNpcId = npcId;
     const context = SillyTavern.getContext();
 
@@ -225,6 +240,22 @@ export function closeNpcEditorModal() {
     currentNpcId = null;
     currentBlocks = [];
     currentLinks = [];
+
+    // Reopen extensions drawer and NPC Tracker drawer if they were open before
+    if (wasExtensionsDrawerOpen) {
+        const extBlock = $('#rm_extensions_block');
+        if (extBlock.length && (extBlock.hasClass('closedDrawer') || !extBlock.hasClass('openDrawer'))) {
+            extBlock.removeClass('closedDrawer').addClass('openDrawer');
+            $('#extensions-settings-button .drawer-icon').removeClass('closedIcon').addClass('openIcon');
+        }
+        const npcDrawerContent = $('#st_npc_settings_content');
+        if (npcDrawerContent.length && npcDrawerContent.is(':hidden')) {
+            npcDrawerContent.show();
+            $('#st_npc_settings_drawer .inline-drawer-icon')
+                .removeClass('down fa-circle-chevron-down')
+                .addClass('up fa-circle-chevron-up');
+        }
+    }
 }
 
 /**

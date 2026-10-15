@@ -139,7 +139,9 @@ function updateDrawerStats() {
                 quickListContainer.html(itemsHtml);
 
                 // Bind click on card to open Editor modal
-                quickListContainer.find('.st-npc-mini-card').on('click', function () {
+                quickListContainer.find('.st-npc-mini-card').on('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
                     const npcId = $(this).data('npc-id');
                     if (npcId) {
                         openNpcEditorModal(npcId);
@@ -471,12 +473,16 @@ async function renderSettingsDrawer(settings) {
         });
 
         // Bind + New NPC button to open Editor modal
-        $('#st_npc_btn_open_editor').off('click').on('click', () => {
+        $('#st_npc_btn_open_editor').off('click').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             openNpcEditorModal(null);
         });
 
         // Bind Create Test NPC button
-        $('#st_npc_btn_create_test').off('click').on('click', () => {
+        $('#st_npc_btn_create_test').off('click').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             try {
                 const randomNum = Math.floor(Math.random() * 900 + 100);
                 const scopeType = settings.defaultScope || 'chat';
@@ -523,7 +529,9 @@ async function renderSettingsDrawer(settings) {
         });
 
         // Bind Sync Prompt button
-        $('#st_npc_btn_sync_prompt').off('click').on('click', () => {
+        $('#st_npc_btn_sync_prompt').off('click').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             try {
                 const promptText = syncPromptInjection(settings);
                 updateDrawerStats();
@@ -539,7 +547,9 @@ async function renderSettingsDrawer(settings) {
         });
 
         // Bind Preview Prompt toggle
-        $('#st_npc_btn_preview_prompt').off('click').on('click', () => {
+        $('#st_npc_btn_preview_prompt').off('click').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const previewPanel = $('#st_npc_preview_panel');
             previewPanel.slideToggle(150, () => {
                 updateDrawerStats();
@@ -547,7 +557,9 @@ async function renderSettingsDrawer(settings) {
         });
 
         // Bind Export JSON button
-        $('#st_npc_btn_export').off('click').on('click', () => {
+        $('#st_npc_btn_export').off('click').on('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             try {
                 const jsonStr = exportDatabaseToJson();
                 const blob = new Blob([jsonStr], { type: 'application/json' });

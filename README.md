@@ -19,7 +19,10 @@ https://github.com/rinchannow02/SillyTavern-NPC-tracker
 - Familiar world info-like mechanisms for activation and deactivation
 - Limited scope of features so it's actually useful
 
-## Why I build this?
+## Screenshot
+TODO, COLLAPSIBLE TAB
+
+## Why I built this?
 
 I like having NPCs but doesn't want to use group chats due to how wonky it is. A dedicated character card with multiple characters often ends up bloated and filling the context window with unnecessary information. World Info is great for lore, but not so much for characters that frequently appear in chats. I want something in between and this is what I got.
 
