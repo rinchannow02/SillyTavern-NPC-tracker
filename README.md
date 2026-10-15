@@ -26,7 +26,8 @@ I like having NPCs but doesn't want to use group chats due to how wonky it is. A
 # Recommendations
 
 TODO
-
+Create a separate preset and connection profile for tool. Make sure "Request model reasoning" turned off and "Reasoning Effort" set to minimum. Could cause issues with some model that has permanent reasoning.
+Alternatively, set max output token higher (4000 to 8000 tokens for reasoning budget)
 Works well with https://github.com/elana-voss/SillyTavern-Extension-NPCNames to stop the LLM from picking yet another Tanaka or Marcus.
 
 ## Alternatives

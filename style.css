@@ -564,3 +564,10 @@
 .st-npc-prompt-toggle-header:hover {
     color: var(--SmartThemeQuoteColor, #70a5ff);
 }
+
+#st_npc_modal_delete_btn.confirm-delete {
+    background-color: #d93838 !important;
+    color: #ffffff !important;
+    border-color: #ff6b6b !important;
+    font-weight: bold;
+}

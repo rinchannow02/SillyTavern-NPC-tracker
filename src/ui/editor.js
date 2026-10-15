@@ -8,6 +8,7 @@ import {
     createNpc,
     updateNpc,
     deleteNpc,
+    saveDatabaseNow,
     linkNpcScope,
     unlinkNpcScope,
     getNpcScopes,
@@ -534,19 +535,55 @@ async function saveNpcFromModal() {
     }
 }
 
+let deleteConfirmTimeout = null;
+
 /**
  * Deletes current NPC from database after confirmation.
  */
 async function deleteNpcFromModal() {
     if (!currentNpcId) return;
 
+    const btn = $('#st_npc_modal_delete_btn');
     const name = $('#st_npc_edit_name').val() || 'this NPC';
-    if (!confirm(`Are you sure you want to delete ${name}? This cannot be undone.`)) {
+
+    // 1. Try SillyTavern's native Popup.show.confirm if available
+    if (typeof Popup !== 'undefined' && Popup.show?.confirm) {
+        try {
+            const confirmed = await Popup.show.confirm(
+                'Delete NPC',
+                `Are you sure you want to delete "${name}"? This cannot be undone.`
+            );
+            if (confirmed) {
+                await executeModalDelete(currentNpcId, name);
+            }
+            return;
+        } catch (_) {}
+    }
+
+    // 2. Inline 2-click confirmation fallback (immune to blocked browser alert/confirm dialogs)
+    if (!btn.hasClass('confirm-delete')) {
+        btn.addClass('confirm-delete').html('<i class="fa-solid fa-triangle-exclamation"></i> Really Delete?');
+        if (deleteConfirmTimeout) clearTimeout(deleteConfirmTimeout);
+        deleteConfirmTimeout = setTimeout(() => {
+            btn.removeClass('confirm-delete').html('<i class="fa-solid fa-trash-can"></i> Delete NPC');
+        }, 4000);
         return;
     }
 
+    if (deleteConfirmTimeout) clearTimeout(deleteConfirmTimeout);
+    btn.removeClass('confirm-delete').html('<i class="fa-solid fa-trash-can"></i> Delete NPC');
+    await executeModalDelete(currentNpcId, name);
+}
+
+/**
+ * Executes the database deletion, saves, updates prompt, and closes modal.
+ * @param {string} npcId
+ * @param {string} name
+ */
+async function executeModalDelete(npcId, name) {
     try {
-        deleteNpc(currentNpcId);
+        deleteNpc(npcId);
+        await saveDatabaseNow();
         syncPromptInjection();
         if (window.toastr) window.toastr.success(`Deleted ${name}`);
 

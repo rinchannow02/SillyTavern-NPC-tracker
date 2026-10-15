@@ -12,28 +12,29 @@ import {
 
 import { syncPromptInjection } from '../injection.js';
 
-export const DEFAULT_EXTRACTION_PROMPT = `Analyze the recent roleplay messages and extract any secondary/tertiary Non-Player Characters (NPCs) mentioned or interacting in the scene.
-Do NOT extract the main user persona or the main character.
+export const DEFAULT_EXTRACTION_PROMPT = `Extract any newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.
+Do NOT extract the main user persona or the primary character.
+
 For each NPC found, output a JSON array of objects with the following keys:
 - "name": string (Full or recognized name of the NPC)
-- "aliases": string (Comma-separated nicknames, titles, or aliases, e.g. "Barkeep, Gid")
-- "group_name": string (Faction, guild, or establishment they belong to, e.g. "Silvermoon Tavern", or empty string)
-- "location_keywords": string (Comma-separated location or setting keywords where this NPC appears, e.g. "tavern, docks", or empty string)
-- "appearance": string (Physical description, clothes, notable features)
-- "personality": string (Demeanor, attitude, speaking style)
-- "relationship": string (Affinity or relationship to the main characters/party)
+- "aliases": string (Comma-separated nicknames, titles, or aliases, e.g. "Barkeep, Chief", or empty string)
+- "group_name": string (Faction, department, or establishment, e.g. "Mirai Industries IT", or empty string)
+- "location_keywords": string (Comma-separated setting keywords where this NPC appears, e.g. "basement, office", or empty string)
+- "appearance": string (ONLY physical traits and attire, concise list/tags: e.g. "woman, tall, heels, dark suit, flat expression")
+- "personality": string (Concise behavioral tags or simple description for roleplay execution: e.g. "deadpan, authoritative, dry humor, monotone, protective")
+- "relationship": string (Concise character pairings formatted like "Character 1 - Role, Character 2 - Role", e.g. "Nanaka - Supervisor, Sunny - Companion, Wisdom - Subordinate")
 
-Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block. Do NOT include any thought process, preamble, or conversational text before or after the JSON:
+Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation:
 \`\`\`json
 [
   {
-    "name": "Example NPC",
+    "name": "NPC Name",
     "aliases": "Alias",
     "group_name": "Group",
     "location_keywords": "location",
-    "appearance": "Description",
-    "personality": "Traits",
-    "relationship": "Connection"
+    "appearance": "man, tall, black hair, lab coat",
+    "personality": "cynical, brilliant, speaks fast, impatient",
+    "relationship": "Character 1 - Colleague, Character 2 - Supervisor"
   }
 ]
 \`\`\``;
