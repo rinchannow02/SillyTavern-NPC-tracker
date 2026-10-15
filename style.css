@@ -514,3 +514,42 @@
     gap: 8px;
     margin-left: auto;
 }
+
+/* ========================================================
+   Scanner Panel Styles
+   ======================================================== */
+.st-npc-scanner-panel {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.st-npc-scanner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.st-npc-scanner-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.st-npc-scanner-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.st-npc-scanner-actions .menu_button {
+    width: 100%;
+    padding: 8px 12px;
+    font-weight: 500;
+}

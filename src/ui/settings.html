@@ -53,6 +53,69 @@
                 </div>
             </div>
 
+            <!-- LLM Chat Scanner Section -->
+            <div class="st-npc-section st-npc-scanner-panel">
+                <div class="st-npc-scanner-header">
+                    <label class="checkbox_label" for="st_npc_scanner_enabled">
+                        <input id="st_npc_scanner_enabled" type="checkbox" class="checkbox" />
+                        <span><b>Enable LLM Chat Scanner</b></span>
+                    </label>
+                    <span id="st_npc_scanner_status_badge" class="st-npc-badge info">Ready</span>
+                </div>
+
+                <div class="st-npc-scanner-body" id="st_npc_scanner_controls" style="display: none;">
+                    <div class="st-npc-form-group">
+                        <label for="st_npc_scanner_profile"><b>Connection Profile:</b></label>
+                        <select id="st_npc_scanner_profile" class="text_pole">
+                            <option value="">Active SillyTavern API</option>
+                        </select>
+                    </div>
+
+                    <div class="st-npc-grid-row">
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_trigger">Trigger Mode</label>
+                            <select id="st_npc_scanner_trigger" class="text_pole">
+                                <option value="manual">Manual (On demand)</option>
+                                <option value="every_n_messages">Every N Messages</option>
+                                <option value="on_keyword">On Setting / Keyword</option>
+                            </select>
+                        </div>
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_depth">Scan Depth (Msgs)</label>
+                            <input id="st_npc_scanner_depth" type="number" min="2" max="50" class="text_pole" value="10" />
+                        </div>
+                    </div>
+
+                    <div class="st-npc-grid-row" id="st_npc_scanner_every_n_row" style="display: none;">
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_every_n">Scan Interval (Messages)</label>
+                            <input id="st_npc_scanner_every_n" type="number" min="1" max="50" class="text_pole" value="5" />
+                        </div>
+                        <div class="st-npc-grid-col">
+                            <label for="st_npc_scanner_update_mode">Update Mode</label>
+                            <select id="st_npc_scanner_update_mode" class="text_pole">
+                                <option value="merge_existing">Merge with Existing</option>
+                                <option value="create_new_only">Create New Only</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="st-npc-form-group">
+                        <label class="checkbox_label" for="st_npc_setting_aware_enabled">
+                            <input id="st_npc_setting_aware_enabled" type="checkbox" class="checkbox" />
+                            <span>Setting-Aware Selective Prompt Injection</span>
+                        </label>
+                    </div>
+
+                    <div class="st-npc-scanner-actions">
+                        <button type="button" class="menu_button primary" id="st_npc_btn_scan_now">
+                            <i class="fa-solid fa-radar"></i>
+                            <span id="st_npc_scan_btn_text">Scan Recent Chat Now</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="st-npc-section st-npc-actions">
                 <button type="button" class="menu_button menu_button_icon primary" id="st_npc_btn_open_editor" title="Open NPC Sheet Editor to create a new NPC">
                     <i class="fa-solid fa-plus"></i>
