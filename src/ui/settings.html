@@ -8,7 +8,7 @@
             <div class="st-npc-section">
                 <label class="checkbox_label" for="st_npc_enabled">
                     <input id="st_npc_enabled" type="checkbox" class="checkbox" />
-                    <span>Enable NPC Tracker</span>
+                    <span>Enable NPC Tracker & Injection</span>
                 </label>
             </div>
 
@@ -24,6 +24,20 @@
                 </select>
             </div>
 
+            <div class="st-npc-section st-npc-grid-row">
+                <div class="st-npc-grid-col">
+                    <label for="st_npc_injection_depth">Injection Depth</label>
+                    <input id="st_npc_injection_depth" type="number" min="0" max="99" class="text_pole" value="4" />
+                </div>
+                <div class="st-npc-grid-col">
+                    <label for="st_npc_injection_position">Position</label>
+                    <select id="st_npc_injection_position" class="text_pole">
+                        <option value="1">In-Chat (Pos 1)</option>
+                        <option value="0">System Prompt (Pos 0)</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="st-npc-section st-npc-stats-panel">
                 <div class="st-npc-stat-row">
                     <span class="st-npc-stat-label"><i class="fa-solid fa-database"></i> Database Engine:</span>
@@ -33,12 +47,24 @@
                     <span class="st-npc-stat-label"><i class="fa-solid fa-users"></i> Linked NPCs in Context:</span>
                     <span id="st_npc_active_count" class="st-npc-badge info">0</span>
                 </div>
+                <div class="st-npc-stat-row">
+                    <span class="st-npc-stat-label"><i class="fa-solid fa-syringe"></i> Prompt Injection:</span>
+                    <span id="st_npc_injection_status_badge" class="st-npc-badge success">Active</span>
+                </div>
             </div>
 
             <div class="st-npc-section st-npc-actions">
                 <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_create_test" title="Create a Test NPC in the current scope">
                     <i class="fa-solid fa-user-plus"></i>
                     <span>Create Test NPC</span>
+                </button>
+                <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_sync_prompt" title="Force sync prompt injection for current chat context">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Sync Prompt</span>
+                </button>
+                <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_preview_prompt" title="Preview prompt injected into LLM">
+                    <i class="fa-solid fa-eye"></i>
+                    <span>Preview Prompt</span>
                 </button>
                 <button type="button" class="menu_button menu_button_icon" id="st_npc_btn_export" title="Export NPC Tracker Database as JSON">
                     <i class="fa-solid fa-file-export"></i>
@@ -49,6 +75,11 @@
                     <span>Import DB JSON</span>
                     <input type="file" id="st_npc_import_file" accept=".json" style="display: none;" />
                 </label>
+            </div>
+
+            <div class="st-npc-section st-npc-preview-container" id="st_npc_preview_panel" style="display: none;">
+                <label><b>Current Prompt Injection Preview:</b></label>
+                <pre id="st_npc_preview_text" class="st-npc-code-block"></pre>
             </div>
 
             <div class="st-npc-section st-npc-list-container" id="st_npc_quick_list">

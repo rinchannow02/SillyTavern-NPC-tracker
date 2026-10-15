@@ -17,6 +17,24 @@
     gap: 6px;
 }
 
+.st-npc-grid-row {
+    display: flex;
+    gap: 10px;
+    flex-direction: row;
+}
+
+.st-npc-grid-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.st-npc-grid-col label {
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
 .st-npc-stats-panel {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -60,6 +78,12 @@
     border: 1px solid rgba(52, 152, 219, 0.4);
 }
 
+.st-npc-badge.warning {
+    background: rgba(241, 196, 15, 0.2);
+    color: #f1c40f;
+    border: 1px solid rgba(241, 196, 15, 0.4);
+}
+
 .st-npc-actions {
     display: flex;
     flex-direction: row;
@@ -71,13 +95,35 @@
 .st-npc-actions .menu_button {
     cursor: pointer;
     flex: 1;
-    min-width: 130px;
+    min-width: 120px;
     text-align: center;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 8px 10px;
+}
+
+.st-npc-preview-container {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 6px;
+}
+
+.st-npc-code-block {
+    margin: 6px 0 0 0;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.82em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow-y: auto;
+    color: var(--SmartThemeBodyColor, #eee);
 }
 
 .st-npc-list-container {
