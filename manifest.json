@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "rinchannow02",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "homePage": "https://github.com/rinchannow02/SillyTavern-NPC-tracker",
     "auto_update": true
 }

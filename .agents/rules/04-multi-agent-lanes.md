@@ -1,20 +1,28 @@
 ---
 trigger: always_on
-description: "Prevents file overwrite conflicts and establishes clear boundaries when running parallel agents in Antigravity IDE"
+description: "Prevents file overwrite conflicts and establishes clear boundaries when running parallel agents across lanes and feature branches"
 ---
 # Multi-Agent Parallel Execution Rules
 
-## 1. Strict Lane Isolation
-- When spawned with a `[LANE: <directory>]` tag in the prompt (e.g., `[LANE: src/db]`, `[LANE: src/ui]`, `[LANE: src/scanner]`), the agent operates as a **Worker Agent**.
-- A Worker Agent has WRITE permission **ONLY** within its designated lane directory (and subdirectories).
-- Any attempt to modify files outside the assigned lane is a violation of parallel safety.
+## 1. Two Modes of Multi-Agent Orchestration
+
+### Mode A: Inter-Feature Parallelism (Multiple Features Concurrently)
+- When multiple agents work on independent features simultaneously (e.g. Agent A on `feat/export-csv`, Agent B on `feat/location-triggers`):
+  1. Each agent operates on its own dedicated feature branch (`feat/<name>`).
+  2. Each concurrent agent MUST be given its own isolated `git worktree` workspace (e.g., `../SillyTavern-NPC-tracker-feat-foo`) if executing at the same time, preventing index locking and unstaged file overwrites.
+  3. The Coordinator merges completed feature branches into `staging` sequentially after testing.
+
+### Mode B: Intra-Feature Lane Isolation (Single Feature, Multiple Lanes)
+- When multiple worker agents work concurrently on different layers of the *same* feature within a single workspace:
+  1. Agents are assigned explicit lanes with a `[LANE: <directory>]` tag (e.g., `[LANE: src/db]`, `[LANE: src/ui]`, `[LANE: src/scanner]`).
+  2. A Worker Agent has WRITE permission **ONLY** within its designated lane directory.
+  3. Any attempt to modify files outside the assigned lane is a violation of parallel safety.
 
 ## 2. Root Files are Coordinator-Only
-- Worker agents MUST NEVER edit root files, including:
+- Worker agents in Lane mode MUST NEVER edit root files, including:
   - `index.js`
   - `manifest.json`
   - `docs/STATE.md`
-  - `src/contracts.js`
   - Root configuration files or global rules
 - If a Worker Agent creates new functions, classes, or event handlers that need to be wired into `index.js`, it MUST document the exact import path and call signature in its final response.
 - The **Coordinator Agent** alone is responsible for wiring worker exports into `index.js` and updating `docs/STATE.md`.
@@ -25,11 +33,9 @@ description: "Prevents file overwrite conflicts and establishes clear boundaries
 - `src/ui/GEMINI.md`: Governs DOM rendering, block editors, modals, templates, and styles.
 - `src/scanner/GEMINI.md`: Governs LLM prompts, connection manager routing, and entity extraction.
 
-## 4. No Git Operations in Parallel Mode
-- Parallel worker agents must **NEVER** run `git checkout`, `git commit`, `git merge`, or `git push`.
-- Running concurrent Git commands corrupts index locks and leads to merge conflicts.
-- Git operations are strictly reserved for the Coordinator Agent after all parallel worker lanes have finished and their changes are verified.
+## 4. Git Safety in Parallel Mode
+- In Lane mode, worker agents must **NEVER** run `git checkout`, `git commit`, `git merge`, or `git push`. Git operations are strictly reserved for the Coordinator Agent.
+- In Feature Worktree mode, each feature agent commits exclusively to its own dedicated branch inside its own worktree directory.
 
 ## 5. Contract Agreement
-- Prior to dispatching parallel agents, data interfaces must be agreed upon in `src/contracts.js` or JSDoc types.
-- Workers must import and respect contract types rather than inventing ad-hoc object structures.
+- Prior to dispatching parallel agents, data interfaces and contracts must be agreed upon in JSDoc typedefs or shared schemas so workers respect common types.
