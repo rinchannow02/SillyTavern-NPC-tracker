@@ -201,9 +201,28 @@ function refreshIgnoreChatCheckbox() {
 }
 
 /**
- * Event handler for automated scan triggers on new messages.
+ * Runs an automated scan with visible start/finish/error toasts.
+ * @param {number} n Configured message interval (for the banner text).
  */
-async function onMessageReceived() {
+async function runAutoScan(n) {
+    console.log(`[NPC Tracker] Automated scan triggered (every ${n} messages).`);
+    window.toastr?.info(`NPC Scanner: auto-scanning recent chat (every ${n} messages)...`);
+    try {
+        const result = await scanRecentChat();
+        if (result.skipped) return;
+        updateDrawerStats();
+        window.toastr?.success(`NPC Scanner: ${result.created} new, ${result.updated} updated NPC(s).`);
+    } catch (err) {
+        console.error('[NPC Tracker] Automated message scan failed:', err);
+        window.toastr?.error(`NPC auto-scan failed: ${err.message}`);
+    }
+}
+
+/**
+ * Event handler for automated scan triggers on new messages.
+ * @param {boolean} canScan False for user sends: count them, but wait for the character reply before scanning.
+ */
+async function onMessageReceived(canScan) {
     const context = SillyTavern.getContext();
     const settings = context.extensionSettings?.[MODULE_NAME];
     if (!settings || !settings.enabled || isChatIgnored()) {
@@ -221,24 +240,18 @@ async function onMessageReceived() {
 
     const { triggerMode, everyNMessages } = settings.scanner;
 
-    if (triggerMode === 'every_n_messages') {
-        messageCounterSinceLastScan++;
-        if (messageCounterSinceLastScan >= (everyNMessages || 5)) {
-            messageCounterSinceLastScan = 0;
-            console.log(`[NPC Tracker] Automated scan triggered (every ${everyNMessages || 5} messages).`);
-            try {
-                const result = await scanRecentChat();
-                if (result.created > 0 || result.updated > 0) {
-                    updateDrawerStats();
-                    if (window.toastr) {
-                        window.toastr.info(`NPC Scanner: Found ${result.created} new, updated ${result.updated} NPC(s).`);
-                    }
-                }
-            } catch (err) {
-                console.error('[NPC Tracker] Automated message scan failed:', err);
-            }
-        }
+    if (triggerMode !== 'every_n_messages') {
+        return;
     }
+
+    const n = everyNMessages || 5;
+    messageCounterSinceLastScan++;
+    if (!canScan || messageCounterSinceLastScan < n) {
+        return;
+    }
+    messageCounterSinceLastScan = 0;
+    // Not awaited: ST awaits event listeners, so awaiting would stall the chat until the scan finishes.
+    runAutoScan(n);
 }
 
 /**
@@ -726,10 +739,10 @@ jQuery(async () => {
                 context.eventSource.on(context.event_types.CHARACTER_PAGE_LOADED, onContextChanged);
             }
             if (context.event_types?.CHARACTER_MESSAGE_RENDERED) {
-                context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, onMessageReceived);
+                context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, () => onMessageReceived(true));
             }
             if (context.event_types?.MESSAGE_SENT) {
-                context.eventSource.on(context.event_types.MESSAGE_SENT, onMessageReceived);
+                context.eventSource.on(context.event_types.MESSAGE_SENT, () => onMessageReceived(false));
             }
             if (context.event_types?.GENERATION_STARTED) {
                 context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
