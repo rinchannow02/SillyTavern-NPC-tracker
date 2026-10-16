@@ -1,7 +1,7 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.0.0` (Tagged `v1.0.0`)
+- **Current Version:** `1.0.1` (Tagged `v1.0.1`)
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
 - **Base Integration Branch:** `staging`
 - **Production Release Branch:** `main`
