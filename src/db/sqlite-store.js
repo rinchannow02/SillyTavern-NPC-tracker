@@ -126,6 +126,22 @@ export async function saveDatabaseNow() {
 }
 
 /**
+ * Normalizes a scope link object for consistent storage.
+ * @param {Object} l
+ * @param {number} [fallbackTimestamp]
+ * @returns {Object}
+ */
+function normalizeLink(l, fallbackTimestamp = Date.now()) {
+    return {
+        scope_type: l.scope_type,
+        target_id: String(l.target_id || ''),
+        relationship_summary: String(l.relationship_summary ?? ''),
+        is_active: l.is_active ?? 1,
+        created_at: l.created_at || fallbackTimestamp,
+    };
+}
+
+/**
  * Creates a new NPC record with embedded scope links.
  * @param {Object} [npcData]
  * @param {Array<Object>} [links]
@@ -139,14 +155,7 @@ export function createNpc(npcData = {}, links = []) {
         ? (Array.isArray(npcData.blocks) ? npcData.blocks : parseBlocks(npcData.blocks))
         : DEFAULT_BLOCKS.map((b) => ({ ...b }));
 
-    const normalizedLinks = (links || []).map((l, idx) => ({
-        id: l.id || now + idx,
-        scope_type: l.scope_type,
-        target_id: String(l.target_id || ''),
-        relationship_summary: l.relationship_summary || '',
-        is_active: l.is_active ?? 1,
-        created_at: l.created_at || now,
-    }));
+    const normalizedLinks = (links || []).map((l) => normalizeLink(l, now));
 
     const newNpc = {
         id,
@@ -192,14 +201,7 @@ export function updateNpc(id, npcData = {}, links = null) {
     }
 
     if (Array.isArray(links)) {
-        npc.links = links.map((l, idx) => ({
-            id: l.id || Date.now() + idx,
-            scope_type: l.scope_type,
-            target_id: String(l.target_id || ''),
-            relationship_summary: l.relationship_summary || '',
-            is_active: l.is_active ?? 1,
-            created_at: l.created_at || Date.now(),
-        }));
+        npc.links = links.map((l) => normalizeLink(l));
     }
 
     npc.updated_at = Date.now();
@@ -235,7 +237,6 @@ export function getNpcById(id) {
     return {
         ...npc,
         blocks,
-        blocks_json: JSON.stringify(blocks),
         links: (npc.links || []).map((l) => ({ ...l })),
     };
 }
@@ -260,14 +261,12 @@ export function linkNpcScope(npcId, scopeType, targetId, relationshipSummary = '
         existing.relationship_summary = String(relationshipSummary || '');
         existing.is_active = isActive ? 1 : 0;
     } else {
-        npc.links.push({
-            id: Date.now(),
+        npc.links.push(normalizeLink({
             scope_type: scopeType,
             target_id: targetStr,
-            relationship_summary: String(relationshipSummary || ''),
+            relationship_summary: relationshipSummary,
             is_active: isActive ? 1 : 0,
-            created_at: Date.now(),
-        });
+        }));
     }
 
     scheduleSave();
@@ -333,6 +332,40 @@ export function getNpcGroups() {
 }
 
 /**
+ * Retrieves hierarchical group and sub-group structure derived from slash-delimited group_name values.
+ * @returns {Array<{ name: string, subGroups: string[] }>}
+ */
+export function getNpcGroupHierarchy() {
+    const flatGroups = getNpcGroups();
+    const tree = new Map();
+
+    for (const raw of flatGroups) {
+        const parts = raw.split('/').map((s) => s.trim()).filter(Boolean);
+        if (parts.length === 0) continue;
+
+        const parent = parts[0];
+        if (!tree.has(parent)) {
+            tree.set(parent, new Set());
+        }
+
+        if (parts.length > 1) {
+            const sub = parts.slice(1).join(' / ');
+            tree.get(parent).add(sub);
+        }
+    }
+
+    const result = [];
+    for (const [parent, subSet] of tree.entries()) {
+        result.push({
+            name: parent,
+            subGroups: Array.from(subSet).sort((a, b) => a.localeCompare(b)),
+        });
+    }
+
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Retrieves all NPCs linked to the active context (chatId, character, persona, or global).
  * Deduplicates multiple links using priority: chat > character > persona > global.
  * @param {Object} [customContext]
@@ -386,7 +419,6 @@ export function getActiveContextNpcs(customContext) {
                 relationship_summary: bestLink.relationship_summary || '',
                 scope_type: bestLink.scope_type,
                 blocks,
-                blocks_json: JSON.stringify(blocks),
             });
         }
     }
@@ -419,7 +451,7 @@ export function exportDatabaseToJson() {
         if (Array.isArray(n.links)) {
             for (const l of n.links) {
                 exportedLinks.push({
-                    id: l.id || linkIdCounter++,
+                    id: linkIdCounter++,
                     npc_id: n.id,
                     scope_type: l.scope_type,
                     target_id: String(l.target_id),
@@ -543,14 +575,7 @@ export async function importDatabaseFromJson(jsonString) {
             if (!linksByNpcId.has(l.npc_id)) {
                 linksByNpcId.set(l.npc_id, []);
             }
-            linksByNpcId.get(l.npc_id).push({
-                id: l.id || Date.now(),
-                scope_type: l.scope_type,
-                target_id: String(l.target_id),
-                relationship_summary: l.relationship_summary || '',
-                is_active: l.is_active ?? 1,
-                created_at: l.created_at || Date.now(),
-            });
+            linksByNpcId.get(l.npc_id).push(normalizeLink(l));
         }
     }
 

@@ -14,6 +14,7 @@ import {
 } from '../db/sqlite-store.js';
 
 import { syncPromptInjection } from '../injection.js';
+import { getPresetById, generateBlocksFromPreset } from '../templates/preset-manager.js';
 
 export const DEFAULT_EXTRACTION_PROMPT = `Extract any newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.
 Do NOT extract the main user persona or the primary character.
@@ -26,7 +27,9 @@ For each NPC found, output a JSON array of objects with the following keys:
 - "location_keywords": string (Comma-separated setting keywords where this NPC appears, e.g. "basement, office", or empty string)
 - "appearance": string (ONLY physical traits and attire, concise list/tags: e.g. "woman, tall, heels, dark suit, flat expression")
 - "personality": string (Concise behavioral tags or simple description for roleplay execution: e.g. "deadpan, authoritative, dry humor, monotone, protective")
+- "speech_style": string (Tone of voice, speech patterns, verbal mannerisms, or accent for the LLM to roleplay: e.g. "speaks in clipped military jargon, dry sarcastic murmur")
 - "relationship": string (Concise character pairings formatted like "Character 1 - Role, Character 2 - Role", e.g. "Nanaka - Supervisor, Sunny - Companion, Wisdom - Subordinate")
+- "bio": string (Concise backstory, origin, or notable background up to ~200 words)
 
 Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation:
 \`\`\`json
@@ -38,7 +41,9 @@ Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without pr
     "location_keywords": "location",
     "appearance": "man, tall, black hair, lab coat",
     "personality": "cynical, brilliant, speaks fast, impatient",
-    "relationship": "Character 1 - Colleague, Character 2 - Supervisor"
+    "speech_style": "rapid-fire speech, technical jargon, mumbles to himself",
+    "relationship": "Character 1 - Colleague, Character 2 - Supervisor",
+    "bio": "Former lead researcher at the institute before leaving under mysterious circumstances."
   }
 ]
 \`\`\``;
@@ -102,137 +107,166 @@ export async function scanRecentChat(options = {}) {
         const settings = context.extensionSettings?.['npc_tracker'] || {};
         const scannerSettings = settings.scanner || {};
 
-        const scanDepth = options.scanDepth ?? scannerSettings.scanDepth ?? 10;
+        const scanDepth = Math.max(1, parseInt(options.scanDepth ?? scannerSettings.scanDepth ?? 10, 10) || 10);
         const profileId = options.connectionProfileId ?? scannerSettings.connectionProfileId ?? '';
         const maxTokens = Math.min(8192, Math.max(100, parseInt(options.maxTokens ?? scannerSettings.maxTokens ?? 800, 10)));
         const rawTemp = parseFloat(options.temperature ?? scannerSettings.temperature);
         const temperature = Number.isFinite(rawTemp) ? Math.min(2.0, Math.max(0.0, rawTemp)) : 0.2;
         const updateMode = options.updateMode ?? scannerSettings.updateMode ?? 'merge_existing';
-        const basePrompt = options.customPrompt || scannerSettings.customPrompt || DEFAULT_EXTRACTION_PROMPT;
+        const activePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates || []);
+        const basePrompt = options.customPrompt || scannerSettings.customPrompt || activePreset.extractionPrompt || DEFAULT_EXTRACTION_PROMPT;
 
-    // 1. Gather recent messages from chat
-    const chat = context.chat || [];
-    if (!Array.isArray(chat) || chat.length === 0) {
-        throw new Error('No messages available in current chat context to scan.');
-    }
-
-    const recentSlice = chat.slice(-Math.max(1, scanDepth));
-    const formattedChatHistory = recentSlice
-        .map((msg) => {
-            const sender = msg.name || (msg.is_user ? context.name1 || 'User' : context.name2 || 'Character');
-            return `${sender}: ${msg.mes || ''}`;
-        })
-        .join('\n\n');
-
-    const fullPrompt = `${basePrompt}\n\n### RECENT CHAT MESSAGES:\n${formattedChatHistory}`;
-
-    console.log(`[NPC Tracker] Scanning last ${recentSlice.length} messages for NPCs (Profile: ${profileId || 'Active ST API'}, maxTokens: ${maxTokens}, temp: ${temperature})...`);
-
-    let rawResponse = '';
-
-    // 2. Route LLM Request
-    if (profileId && context.ConnectionManagerRequestService) {
-        try {
-            console.log(`[NPC Tracker] Routing extraction via Connection Profile: ${profileId}`);
-            const result = await context.ConnectionManagerRequestService.sendRequest(
-                profileId,
-                fullPrompt,
-                maxTokens,
-                { stream: false, extractData: true },
-                { temperature, max_tokens: maxTokens }
-            );
-
-            if (typeof result === 'string') {
-                rawResponse = result;
-            } else if (result && typeof result === 'object') {
-                rawResponse = result.content ?? result.text ?? result.message ?? JSON.stringify(result);
-            }
-        } catch (err) {
-            throw new Error(`[NPC Tracker] Connection profile "${profileId}" request failed: ${err.message}`);
+        // 1. Gather recent messages from chat
+        const chat = context.chat || [];
+        if (!Array.isArray(chat) || chat.length === 0) {
+            throw new Error('No messages available in current chat context to scan.');
         }
-    } else {
-        rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
-    }
 
-    if (!rawResponse || typeof rawResponse !== 'string') {
-        throw new Error('Received empty response from extraction LLM.');
-    }
+        const recentSlice = chat.slice(-scanDepth);
+        const formattedChatHistory = recentSlice
+            .map((msg) => {
+                const sender = msg.name || (msg.is_user ? context.name1 || 'User' : context.name2 || 'Character');
+                return `${sender}: ${msg.mes || ''}`;
+            })
+            .join('\n\n');
 
-    // 3. Parse JSON extraction
-    const extractedList = parseExtractionResponse(rawResponse);
-    if (!Array.isArray(extractedList) || extractedList.length === 0) {
-        console.log('[NPC Tracker] No new NPCs detected in recent messages.');
-        return { extracted: [], created: 0, updated: 0 };
-    }
+        const fullPrompt = `${basePrompt}\n\n### RECENT CHAT MESSAGES:\n${formattedChatHistory}`;
 
-    console.log(`[NPC Tracker] Extracted ${extractedList.length} candidate NPC(s) from chat:`, extractedList.map((e) => e.name));
+        console.log(`[NPC Tracker] Scanning last ${recentSlice.length} messages for NPCs (Profile: ${profileId || 'Active ST API'}, maxTokens: ${maxTokens}, temp: ${temperature})...`);
 
-    // 4. Merge or Create into SQLite
-    let createdCount = 0;
-    let updatedCount = 0;
+        let rawResponse = '';
 
-    const targetScope = settings.defaultScope || 'chat';
-    const targetId = resolveScopeTarget(targetScope, context) || resolveScopeTarget('chat', context) || 'default_chat';
+        // 2. Route LLM Request
+        if (profileId && context.ConnectionManagerRequestService) {
+            try {
+                console.log(`[NPC Tracker] Routing extraction via Connection Profile: ${profileId}`);
+                const result = await context.ConnectionManagerRequestService.sendRequest(
+                    profileId,
+                    fullPrompt,
+                    maxTokens,
+                    { stream: false, extractData: true },
+                    { temperature, max_tokens: maxTokens }
+                );
 
-    for (const item of extractedList) {
-        if (!item.name || typeof item.name !== 'string' || !item.name.trim()) continue;
-
-        const cleanName = item.name.trim();
-        const existing = findExistingNpc(cleanName, item.aliases);
-
-        const blocks = DEFAULT_BLOCKS.map((b) => ({
-            ...b,
-            value: item[b.id] || '',
-        }));
-
-        if (existing) {
-            if (updateMode === 'create_new_only') {
-                continue;
-            }
-
-            // Merge details: only fill fields that are empty; never overwrite non-empty user data
-            const mergedBlocks = Array.isArray(existing.blocks) ? [...existing.blocks] : [];
-            for (const b of blocks) {
-                const targetIdx = mergedBlocks.findIndex((mb) => mb.id === b.id);
-                if (targetIdx !== -1) {
-                    if (!mergedBlocks[targetIdx].value && b.value) {
-                        mergedBlocks[targetIdx].value = b.value;
-                    }
-                } else if (b.value) {
-                    mergedBlocks.push(b);
+                if (typeof result === 'string') {
+                    rawResponse = result;
+                } else if (result && typeof result === 'object') {
+                    rawResponse = result.content ?? result.text ?? result.message ?? JSON.stringify(result);
                 }
+            } catch (err) {
+                throw new Error(`[NPC Tracker] Connection profile "${profileId}" request failed: ${err.message}`);
             }
-
-            updateNpc(existing.id, {
-                aliases: existing.aliases || item.aliases || '',
-                group_name: existing.group_name || item.group_name || '',
-                location_keywords: existing.location_keywords || item.location_keywords || '',
-                blocks: mergedBlocks,
-            });
-            updatedCount++;
         } else {
-            createNpc(
-                {
-                    name: cleanName,
-                    aliases: item.aliases || '',
-                    group_name: item.group_name || '',
-                    location_keywords: item.location_keywords || '',
-                    blocks,
-                },
-                [
-                    {
-                        scope_type: targetScope,
-                        target_id: targetId,
-                        relationship_summary: item.relationship || 'Encountered in scene',
-                    },
-                ]
-            );
-            createdCount++;
+            rawResponse = await requestViaActiveApi(fullPrompt, maxTokens, temperature);
         }
-    }
 
-    // 5. Re-synchronize prompt injection
-    syncPromptInjection();
+        if (!rawResponse || typeof rawResponse !== 'string') {
+            throw new Error('Received empty response from extraction LLM.');
+        }
+
+        // 3. Parse JSON extraction
+        const extractedList = parseExtractionResponse(rawResponse);
+        if (!Array.isArray(extractedList) || extractedList.length === 0) {
+            console.log('[NPC Tracker] No new NPCs detected in recent messages.');
+            return { extracted: [], created: 0, updated: 0 };
+        }
+
+        console.log(`[NPC Tracker] Extracted ${extractedList.length} candidate NPC(s) from chat:`, extractedList.map((e) => e.name));
+
+        // 4. Merge or Create into Database
+        let createdCount = 0;
+        let updatedCount = 0;
+
+        const targetScope = settings.defaultScope || 'chat';
+        const targetId = resolveScopeTarget(targetScope, context) || resolveScopeTarget('chat', context) || 'default_chat';
+        const activeNpcs = getActiveContextNpcs(context);
+
+        for (const item of extractedList) {
+            if (!item.name || typeof item.name !== 'string' || !item.name.trim()) continue;
+
+            const cleanName = item.name.trim();
+            const existing = findExistingNpc(cleanName, item.aliases, context, activeNpcs);
+
+            const defaultBlocks = generateBlocksFromPreset(activePreset);
+            const blocks = defaultBlocks.map((b) => ({
+                ...b,
+                value: getSafePrimitiveString(item, b.id) || getSafePrimitiveString(item, b.label),
+            }));
+
+            const safeAliases = getSafePrimitiveString(item, 'aliases');
+            const safeGroupName = getSafePrimitiveString(item, 'group_name');
+            const safeLocation = getSafePrimitiveString(item, 'location_keywords');
+            const safeRelationship = getSafePrimitiveString(item, 'relationship');
+
+            if (existing) {
+                if (updateMode === 'create_new_only') {
+                    continue;
+                }
+
+                // Merge details: only fill fields that are empty; never overwrite non-empty user data
+                const mergedBlocks = Array.isArray(existing.blocks) ? [...existing.blocks] : [];
+                for (const b of blocks) {
+                    const targetIdx = mergedBlocks.findIndex((mb) => mb.id === b.id);
+                    if (targetIdx !== -1) {
+                        if (!mergedBlocks[targetIdx].value && b.value) {
+                            mergedBlocks[targetIdx].value = b.value;
+                        }
+                    } else if (b.value) {
+                        mergedBlocks.push(b);
+                    }
+                }
+
+                updateNpc(existing.id, {
+                    aliases: existing.aliases || safeAliases || '',
+                    group_name: existing.group_name || safeGroupName || '',
+                    location_keywords: existing.location_keywords || safeLocation || '',
+                    blocks: mergedBlocks,
+                });
+                existing.blocks = mergedBlocks;
+                if (safeAliases && !existing.aliases) existing.aliases = safeAliases;
+                if (safeGroupName && !existing.group_name) existing.group_name = safeGroupName;
+                if (safeLocation && !existing.location_keywords) existing.location_keywords = safeLocation;
+                updatedCount++;
+            } else {
+                const newId = createNpc(
+                    {
+                        name: cleanName,
+                        aliases: safeAliases || '',
+                        group_name: safeGroupName || '',
+                        location_keywords: safeLocation || '',
+                        blocks,
+                        raw_content: activePreset.template || '',
+                    },
+                    [
+                        {
+                            scope_type: targetScope,
+                            target_id: targetId,
+                            relationship_summary: safeRelationship || 'Encountered in scene',
+                        },
+                    ]
+                );
+                activeNpcs.push({
+                    id: newId,
+                    name: cleanName,
+                    aliases: safeAliases || '',
+                    group_name: safeGroupName || '',
+                    location_keywords: safeLocation || '',
+                    blocks,
+                    links: [
+                        {
+                            scope_type: targetScope,
+                            target_id: targetId,
+                            relationship_summary: safeRelationship || 'Encountered in scene',
+                            is_active: 1,
+                        },
+                    ],
+                });
+                createdCount++;
+            }
+        }
+
+        // 5. Re-synchronize prompt injection
+        syncPromptInjection(undefined, activeNpcs);
 
         return {
             extracted: extractedList,
@@ -276,7 +310,7 @@ async function requestViaActiveApi(prompt, maxTokens = 800, temperature = 0.2) {
     } catch (err) {
         const errText = `${err?.message || ''} ${JSON.stringify(err || {})}`;
         if (errText.includes('Reasoning is mandatory')) {
-            throw new Error('The active model (e.g. GLM-5.3-flash) requires reasoning/thinking enabled. Please enable "Show Thoughts" / set reasoning effort in SillyTavern API settings, or select a dedicated Connection Profile in NPC Tracker.');
+            throw new Error('The active model requires reasoning/thinking enabled. Please enable "Show Thoughts" / set reasoning effort in SillyTavern API settings, or select a dedicated Connection Profile in NPC Tracker.');
         }
         throw err;
     }
@@ -336,20 +370,39 @@ export function parseExtractionResponse(rawText) {
 }
 
 /**
- * Locates an existing NPC record by matching name or trigger aliases.
+ * Safely extracts a primitive string property from an object, preventing prototype pollution (C3).
+ * @param {Object} obj
+ * @param {string} key
+ * @returns {string}
+ */
+function getSafePrimitiveString(obj, key) {
+    if (!obj || typeof obj !== 'object' || !key) return '';
+    if (Object.hasOwn(obj, key)) {
+        const val = obj[key];
+        if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+            return String(val).trim();
+        }
+    }
+    return '';
+}
+
+/**
+ * Locates an existing NPC record by matching name or trigger aliases within the target chat context (C4).
  * @param {string} name
  * @param {string} [aliases]
+ * @param {Object} [context]
+ * @param {Array<Object>} [cachedActiveNpcs]
  * @returns {Object|null}
  */
-function findExistingNpc(name, aliases = '') {
-    const activeNpcs = getActiveContextNpcs();
+function findExistingNpc(name, aliases = '', context = null, cachedActiveNpcs = null) {
+    const activeNpcs = cachedActiveNpcs || getActiveContextNpcs(context);
     const cleanTargetName = name.toLowerCase().trim();
 
     for (const npc of activeNpcs) {
         if (npc.name && npc.name.toLowerCase().trim() === cleanTargetName) {
             return {
                 ...npc,
-                blocks: Array.isArray(npc.blocks) ? npc.blocks : parseBlocks(npc.blocks_json),
+                blocks: Array.isArray(npc.blocks) ? npc.blocks : [],
             };
         }
 
@@ -359,7 +412,7 @@ function findExistingNpc(name, aliases = '') {
             if (splitAliases.includes(cleanTargetName)) {
                 return {
                     ...npc,
-                    blocks: Array.isArray(npc.blocks) ? npc.blocks : parseBlocks(npc.blocks_json),
+                    blocks: Array.isArray(npc.blocks) ? npc.blocks : [],
                 };
             }
         }
@@ -371,7 +424,7 @@ function findExistingNpc(name, aliases = '') {
 /**
  * Evaluates active context NPCs against recent chat text for compound Setting/Location triggers.
  * @param {Array<Object>} activeNpcs
- * @param {number} [depth=4]
+ * @param {number|string} [depthOrText=4]
  * @returns {Array<Object>} Filtered active NPCs
  */
 export function evaluateSettingAwareTriggers(activeNpcs, depthOrText = 4) {
@@ -381,7 +434,7 @@ export function evaluateSettingAwareTriggers(activeNpcs, depthOrText = 4) {
     if (typeof depthOrText === 'string') {
         recentText = depthOrText.toLowerCase();
     } else {
-        const depth = typeof depthOrText === 'number' ? depthOrText : 4;
+        const depth = Math.max(1, typeof depthOrText === 'number' ? depthOrText : (parseInt(depthOrText, 10) || 4));
         const context = (typeof SillyTavern !== 'undefined' && SillyTavern.getContext) ? SillyTavern.getContext() : {};
         const chat = context.chat || [];
         if (chat.length === 0) return activeNpcs;

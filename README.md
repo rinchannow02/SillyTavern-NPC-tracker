@@ -8,6 +8,17 @@ Do you love having recurring secondary characters in your stories? Tired of trac
 
 ---
 
+## 📢 News
+
+### What's New in v1.1.0
+- **Two-Way Sheet Editing:** Seamlessly switch between modular Block Editor cards and freeform Markdown templates at any time with automatic two-way conversion.
+- **Hierarchical Group Selector:** Organize NPCs with nested factions and departments (e.g., `Mirai Industries IT / Cybersecurity Division`) using an intuitive checkbox tree.
+- **Genre Template Presets & Sharing:** Choose from built-in presets (Classic, Slice of Life, Adventure/Fantasy, Sci-Fi/Cyberpunk) or customize, export, and import your own sheet schemas paired with tailored LLM extraction prompts.
+
+*Read more in the [Changelog](CHANGELOG.md)*
+
+---
+
 ## 📦 Installation
 
 1. In SillyTavern, open the **Extensions** menu (the cube icon in the top navigation bar).
@@ -37,6 +48,9 @@ Do you love having recurring secondary characters in your stories? Tired of trac
   - Optionally filters prompt injection based on the current scene setting (compound Place + NPC triggers).
   - Keeps your context window lean by only injecting NPCs when their location keywords, name, or aliases match the recent conversation.
 - **Full Data Portability:** One-click JSON database export and import for seamless backups and sharing between devices.
+
+> [!NOTE]
+> **Macro Evaluation Notice:** SillyTavern processes extension prompt strings through its parameter substitution engine. If imported NPC backups or scanner extractions contain SillyTavern macro tags (such as `{{setvar::...}}`), they will be evaluated during prompt generation. Only import database backups and presets from trusted sources.
 
 ---
 
@@ -103,9 +117,14 @@ This extension is deliberately built with a tight, focused scope for NPC profile
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contributing & Testing
 
 Contributions, suggestions, and bug reports are welcome! Feel free to open an issue or submit a pull request on GitHub.
+
+To run the automated test suite locally:
+```bash
+node --test test/*.mjs
+```
 
 ---
 

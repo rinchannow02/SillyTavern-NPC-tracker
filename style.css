@@ -239,6 +239,36 @@
     gap: 8px;
 }
 
+.st-npc-modal-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.st-npc-modal-preset-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    opacity: 0.9;
+}
+
+.st-npc-modal-preset-wrap label {
+    font-size: 0.88em;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.st-npc-modal-preset-select {
+    font-size: 0.85em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    max-width: 170px;
+}
+
 .st-npc-modal-close {
     background: none;
     border: none;
@@ -275,6 +305,172 @@
 
 .st-npc-form-group.full-width {
     grid-column: span 2;
+}
+
+.st-npc-group-form-group {
+    position: relative;
+}
+
+.st-npc-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.st-npc-btn-toggle-tree {
+    background: none;
+    border: none;
+    color: var(--SmartThemeQuoteColor, #3498db);
+    cursor: pointer;
+    font-size: 0.82em;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.st-npc-btn-toggle-tree:hover {
+    color: #5dade2;
+    text-decoration: underline;
+}
+
+.st-npc-input-clear-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.st-npc-input-clear-wrap input {
+    padding-right: 28px;
+    width: 100%;
+}
+
+.st-npc-clear-input-btn {
+    position: absolute;
+    right: 6px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 0.85em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.st-npc-clear-input-btn:hover {
+    color: #e74c3c;
+}
+
+.st-npc-group-tree-panel {
+    background: rgba(20, 24, 33, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.st-npc-tree-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.82em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.st-npc-tree-close-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+.st-npc-tree-close-btn:hover {
+    color: #fff;
+}
+
+.st-npc-tree-add-box {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.st-npc-tree-add-box input {
+    flex: 1;
+    font-size: 0.82em;
+    padding: 4px 6px;
+}
+
+.st-npc-btn-tree-add {
+    padding: 4px 10px;
+    font-size: 0.82em;
+    white-space: nowrap;
+    margin: 0;
+    cursor: pointer;
+}
+
+.st-npc-group-tree-container {
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.st-npc-tree-parent-node {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.st-npc-tree-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.st-npc-tree-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.st-npc-tree-row.selected {
+    background: rgba(52, 152, 219, 0.2);
+}
+
+.st-npc-tree-sub-list {
+    margin-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 1px dashed rgba(255, 255, 255, 0.18);
+    padding-left: 6px;
+}
+
+.st-npc-tree-label {
+    font-size: 0.86em;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.st-npc-tree-sub-label {
+    font-size: 0.82em;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.st-npc-tree-empty {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.45);
+    font-style: italic;
+    padding: 6px 0;
 }
 
 .st-npc-tab-bar {
@@ -378,21 +574,44 @@
     font-family: inherit;
 }
 
-.st-npc-btn-add-block {
-    width: 100%;
+.st-npc-block-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.st-npc-block-btn-row .menu_button {
+    flex: 1;
     padding: 8px;
-    margin-top: 4px;
     cursor: pointer;
+    margin: 0;
+    font-size: 0.9em;
+}
+
+.st-npc-btn-sync {
+    padding: 3px 8px;
+    font-size: 0.85em;
+    cursor: pointer;
+    white-space: nowrap;
 }
 
 .st-npc-template-helper {
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: space-between;
+    gap: 8px;
     flex-wrap: wrap;
     margin-bottom: 8px;
     font-size: 0.82em;
-    opacity: 0.85;
+    opacity: 0.95;
+}
+
+.st-npc-tokens-list {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
 }
 
 .st-npc-token-pill {

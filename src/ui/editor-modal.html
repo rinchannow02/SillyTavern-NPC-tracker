@@ -2,9 +2,15 @@
     <div class="st-npc-modal-dialog">
         <div class="st-npc-modal-header">
             <h3 id="st_npc_modal_title"><i class="fa-solid fa-id-card"></i> NPC Sheet Editor</h3>
-            <button type="button" class="st-npc-modal-close" id="st_npc_modal_close_btn" title="Close">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
+            <div class="st-npc-modal-header-actions">
+                <div class="st-npc-modal-preset-wrap" title="Switch template preset for this NPC">
+                    <label for="st_npc_modal_preset_select"><i class="fa-solid fa-shapes"></i> Template:</label>
+                    <select id="st_npc_modal_preset_select" class="text_pole st-npc-modal-preset-select"></select>
+                </div>
+                <button type="button" class="st-npc-modal-close" id="st_npc_modal_close_btn" title="Close">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
         </div>
 
         <div class="st-npc-modal-body">
@@ -21,10 +27,39 @@
                     <label for="st_npc_edit_aliases"><b>Aliases / Trigger Keywords:</b></label>
                     <input type="text" id="st_npc_edit_aliases" class="text_pole" placeholder="e.g. Vane, Pirate Captain, Helmsman" />
                 </div>
-                <div class="st-npc-form-group">
-                    <label for="st_npc_edit_group"><b>Group / Sub-Group:</b></label>
-                    <input type="text" id="st_npc_edit_group" class="text_pole" list="st_npc_group_datalist" placeholder="e.g. Silvermoon Tavern, City Guard, Crimson Fleet" />
-                    <datalist id="st_npc_group_datalist"></datalist>
+                <div class="st-npc-form-group st-npc-group-form-group">
+                    <div class="st-npc-label-row">
+                        <label for="st_npc_edit_group"><b>Group / Sub-Group:</b></label>
+                        <button type="button" class="st-npc-btn-toggle-tree" id="st_npc_btn_toggle_group_tree" title="Browse / Select existing groups">
+                            <i class="fa-solid fa-folder-tree"></i> Browse Tree
+                        </button>
+                    </div>
+                    <div class="st-npc-input-clear-wrap">
+                        <input type="text" id="st_npc_edit_group" class="text_pole" placeholder="e.g. Mirai Industries IT / Cybersecurity Division" autocomplete="off" />
+                        <button type="button" class="st-npc-clear-input-btn" id="st_npc_btn_clear_group" title="Clear group">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+
+                    <!-- Collapsible Tree Picker Panel -->
+                    <div id="st_npc_group_tree_panel" class="st-npc-group-tree-panel" style="display: none;">
+                        <div class="st-npc-tree-header">
+                            <span class="st-npc-tree-title"><i class="fa-solid fa-sitemap"></i> Existing Groups & Sub-Groups</span>
+                            <button type="button" class="st-npc-tree-close-btn" id="st_npc_btn_close_group_tree" title="Close"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+
+                        <div class="st-npc-tree-add-box">
+                            <input type="text" id="st_npc_new_parent_group" class="text_pole" placeholder="New Group..." />
+                            <input type="text" id="st_npc_new_sub_group" class="text_pole" placeholder="Sub-Group (optional)..." />
+                            <button type="button" class="menu_button primary st-npc-btn-tree-add" id="st_npc_btn_add_custom_group" title="Add & Select">
+                                <i class="fa-solid fa-plus"></i> Add
+                            </button>
+                        </div>
+
+                        <div id="st_npc_group_tree_container" class="st-npc-group-tree-container">
+                            <!-- Dynamic tree nodes injected here -->
+                        </div>
+                    </div>
                 </div>
                 <div class="st-npc-form-group">
                     <label for="st_npc_edit_location"><b>Location / Setting Triggers:</b></label>
@@ -48,22 +83,32 @@
                 <div id="st_npc_blocks_list" class="st-npc-blocks-container">
                     <!-- Dynamic Blocks injected here -->
                 </div>
-                <button type="button" class="menu_button st-npc-btn-add-block" id="st_npc_btn_add_block">
-                    <i class="fa-solid fa-plus"></i> Add Custom Block
-                </button>
+                <div class="st-npc-block-btn-row">
+                    <button type="button" class="menu_button st-npc-btn-add-block" id="st_npc_btn_add_block">
+                        <i class="fa-solid fa-plus"></i> Add Custom Block
+                    </button>
+                    <button type="button" class="menu_button st-npc-btn-sync" id="st_npc_btn_sync_from_template" title="Parse current template into blocks">
+                        <i class="fa-solid fa-file-import"></i> Parse from Template
+                    </button>
+                </div>
             </div>
 
             <!-- Tab 2: Template Mode -->
             <div class="st-npc-tab-content" id="st_npc_tab_content_template" style="display: none;">
                 <div class="st-npc-template-helper">
-                    <span>Available tokens:</span>
-                    <button type="button" class="st-npc-token-pill" data-token="{{name}}">{{name}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{aliases}}">{{aliases}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{group}}">{{group}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{location}}">{{location}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{appearance}}">{{appearance}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{personality}}">{{personality}}</button>
-                    <button type="button" class="st-npc-token-pill" data-token="{{relationship}}">{{relationship}}</button>
+                    <div class="st-npc-tokens-list">
+                        <span>Tokens:</span>
+                        <button type="button" class="st-npc-token-pill" data-token="{{name}}">{{name}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{aliases}}">{{aliases}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{group}}">{{group}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{location}}">{{location}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{appearance}}">{{appearance}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{personality}}">{{personality}}</button>
+                        <button type="button" class="st-npc-token-pill" data-token="{{relationship}}">{{relationship}}</button>
+                    </div>
+                    <button type="button" class="menu_button st-npc-btn-sync" id="st_npc_btn_sync_from_blocks" title="Generate template from current blocks">
+                        <i class="fa-solid fa-file-export"></i> Populate from Blocks
+                    </button>
                 </div>
                 <textarea id="st_npc_edit_template_content" class="text_pole st-npc-template-area" rows="8" placeholder="### NPC: {{name}} [{{group}}]\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}"></textarea>
             </div>

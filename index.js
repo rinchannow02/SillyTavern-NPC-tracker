@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (Milestone 4: LLM Chat Scanner & Setting-Aware Engine)
+ * @description Entry point for SillyTavern-NPC-tracker (v1.1.0: Customizable Templates, LLM Chat Scanner, Presets & Setting-Aware Engine)
  */
 
 import {
@@ -43,6 +43,14 @@ import {
     DEFAULT_EXTRACTION_PROMPT,
 } from './src/scanner/chat-scanner.js';
 
+import {
+    BUILTIN_PRESETS,
+    getAllPresets,
+    getPresetById,
+    exportPresetJson,
+    importPresetFromJson,
+} from './src/templates/preset-manager.js';
+
 export const MODULE_NAME = 'npc_tracker';
 
 let messageCounterSinceLastScan = 0;
@@ -53,6 +61,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     injectionPosition: 1, // 1 = in-chat, 0 = system prompt
     injectionDepth: 4,
     injectionRole: 0, // 0 = system, 1 = user, 2 = assistant
+    activeTemplateId: 'classic',
+    customTemplates: [],
     scanner: {
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
@@ -90,11 +100,29 @@ function initExtensionSettings() {
 }
 
 /**
- * Updates dynamic statistics and quick list in the UI drawer.
+ * Triggers a client-side JSON file download in the browser.
+ * @param {string} filename
+ * @param {string} jsonStr
  */
-function updateDrawerStats() {
+function downloadJsonFile(filename, jsonStr) {
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
+}
+
+/**
+ * Updates dynamic statistics and quick list in the UI drawer.
+ * @param {Array<Object>|null} [cachedActiveNpcs] Optional pre-queried active context NPCs.
+ */
+function updateDrawerStats(cachedActiveNpcs = null) {
     try {
-        const activeNpcs = getActiveContextNpcs();
+        const activeNpcs = cachedActiveNpcs || getActiveContextNpcs();
         const countElement = document.getElementById('st_npc_active_count');
         if (countElement) {
             countElement.textContent = String(activeNpcs.length);
@@ -185,8 +213,8 @@ function onContextChanged() {
         const activeNpcs = getActiveContextNpcs();
         console.debug(`[NPC Tracker] Context changed. ${activeNpcs.length} linked NPC(s) in active scope.`);
         refreshIgnoreChatCheckbox();
-        syncPromptInjection();
-        updateDrawerStats();
+        syncPromptInjection(undefined, activeNpcs);
+        updateDrawerStats(activeNpcs);
     } catch (err) {
         console.error('[NPC Tracker] Error updating prompt on context change:', err);
     }
@@ -227,11 +255,6 @@ async function onMessageReceived(canScan) {
     const settings = context.extensionSettings?.[MODULE_NAME];
     if (!settings || !settings.enabled || isChatIgnored()) {
         return;
-    }
-
-    if (settings.scanner?.settingAwareFilter) {
-        syncPromptInjection(settings);
-        updateDrawerStats();
     }
 
     if (!settings.scanner || !settings.scanner.enabled) {
@@ -373,6 +396,185 @@ async function renderSettingsDrawer(settings) {
         });
 
         // ==========================================
+        // Bind Database Template & Presets Controls
+        // ==========================================
+        const presetToggle = $('#st_npc_preset_toggle');
+        const presetBody = $('#st_npc_preset_body');
+        const presetChevron = $('#st_npc_preset_chevron');
+        const presetSelect = $('#st_npc_preset_select');
+        const activePresetBadge = $('#st_npc_active_preset_badge');
+        const presetDesc = $('#st_npc_preset_desc');
+        const blocksSummary = $('#st_npc_preset_blocks_summary');
+        const promptPreview = $('#st_npc_preset_prompt_preview');
+        const deletePresetBtn = $('#st_npc_btn_delete_preset');
+
+        presetToggle.off('click').on('click', () => {
+            presetBody.slideToggle(150);
+            const isOpen = presetBody.is(':visible');
+            presetChevron.css('transform', isOpen ? 'rotate(90deg)' : 'rotate(0deg)');
+        });
+
+        function refreshPresetsUI() {
+            if (!Array.isArray(settings.customTemplates)) {
+                settings.customTemplates = [];
+            }
+            const allPresets = getAllPresets(settings.customTemplates);
+            presetSelect.empty();
+
+            for (const preset of allPresets) {
+                const opt = $('<option></option>')
+                    .val(preset.id)
+                    .text(`${preset.name}${preset.isBuiltin ? '' : ' [Custom]'}`);
+                presetSelect.append(opt);
+            }
+
+            const currentId = settings.activeTemplateId || 'classic';
+            presetSelect.val(currentId);
+
+            const activePreset = getPresetById(currentId, settings.customTemplates);
+            activePresetBadge.text(activePreset.name);
+            presetDesc.text(activePreset.description || '');
+
+            const blockNames = (activePreset.blocks || []).map((b) => b.label || b.id).join(', ');
+            blocksSummary.text(blockNames || '(No blocks defined)');
+            promptPreview.text(activePreset.extractionPrompt || '(No extraction prompt defined)');
+
+            if (activePreset.isBuiltin) {
+                deletePresetBtn.hide();
+            } else {
+                deletePresetBtn.show();
+            }
+
+            if (!scannerSettings.customPrompt) {
+                $('#st_npc_scanner_prompt').val(activePreset.extractionPrompt || DEFAULT_EXTRACTION_PROMPT);
+            }
+        }
+
+        refreshPresetsUI();
+
+        presetSelect.off('change').on('change', function () {
+            settings.activeTemplateId = $(this).val();
+            context.saveSettingsDebounced();
+            refreshPresetsUI();
+            if (window.toastr) {
+                window.toastr.info(`Default template changed to: ${activePresetBadge.text()}`);
+            }
+        });
+
+        // Export Preset JSON
+        $(document).off('click', '#st_npc_btn_export_preset').on('click', '#st_npc_btn_export_preset', () => {
+            try {
+                const activePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+                const jsonStr = exportPresetJson(activePreset);
+                downloadJsonFile(`npc_preset_${activePreset.id}.json`, jsonStr);
+                if (window.toastr) {
+                    window.toastr.success(`Preset "${activePreset.name}" exported successfully.`);
+                }
+            } catch (err) {
+                console.error('[NPC Tracker] Failed to export preset:', err);
+                if (window.toastr) {
+                    window.toastr.error(`Export preset failed: ${err.message}`);
+                }
+            }
+        });
+
+        // Import Preset JSON
+        $('#st_npc_file_import_preset').off('change').on('change', async (event) => {
+            const input = event.target;
+            const file = input.files?.[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const imported = importPresetFromJson(text);
+
+                if (BUILTIN_PRESETS.some((p) => p.id === imported.id)) {
+                    imported.id = `custom_${Date.now()}`;
+                    imported.name = `${imported.name} (Custom)`;
+                }
+
+                if (!Array.isArray(settings.customTemplates)) {
+                    settings.customTemplates = [];
+                }
+
+                const existingIdx = settings.customTemplates.findIndex((p) => p.id === imported.id);
+                if (existingIdx >= 0) {
+                    settings.customTemplates[existingIdx] = imported;
+                } else {
+                    settings.customTemplates.push(imported);
+                }
+
+                settings.activeTemplateId = imported.id;
+                context.saveSettingsDebounced();
+                refreshPresetsUI();
+                if (window.toastr) {
+                    window.toastr.success(`Preset "${imported.name}" imported and activated.`);
+                }
+            } catch (err) {
+                console.error('[NPC Tracker] Failed to import preset:', err);
+                if (window.toastr) {
+                    window.toastr.error(`Import preset failed: ${err.message}`);
+                }
+            } finally {
+                input.value = '';
+            }
+        });
+
+        // Duplicate Preset
+        $(document).off('click', '#st_npc_btn_duplicate_preset').on('click', '#st_npc_btn_duplicate_preset', () => {
+            const activePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+            const defaultNewName = `${activePreset.name} (Copy)`;
+            const newName = window.prompt('Enter a name for the duplicated preset:', defaultNewName);
+            if (!newName || !newName.trim()) return;
+
+            const newId = `custom_${Date.now()}`;
+            const clonedPreset = {
+                id: newId,
+                name: newName.trim(),
+                description: activePreset.description || '',
+                isBuiltin: false,
+                blocks: JSON.parse(JSON.stringify(activePreset.blocks || [])),
+                template: activePreset.template || '',
+                extractionPrompt: activePreset.extractionPrompt || '',
+            };
+
+            if (!Array.isArray(settings.customTemplates)) {
+                settings.customTemplates = [];
+            }
+            settings.customTemplates.push(clonedPreset);
+            settings.activeTemplateId = newId;
+            context.saveSettingsDebounced();
+            refreshPresetsUI();
+
+            if (window.toastr) {
+                window.toastr.success(`Preset duplicated as "${clonedPreset.name}".`);
+            }
+        });
+
+        // Delete Custom Preset
+        $(document).off('click', '#st_npc_btn_delete_preset').on('click', '#st_npc_btn_delete_preset', () => {
+            const activePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+            if (activePreset.isBuiltin) {
+                if (window.toastr) window.toastr.warning('Built-in presets cannot be deleted.');
+                return;
+            }
+
+            const confirmDelete = window.confirm(`Are you sure you want to delete the custom preset "${activePreset.name}"?`);
+            if (!confirmDelete) return;
+
+            if (Array.isArray(settings.customTemplates)) {
+                settings.customTemplates = settings.customTemplates.filter((p) => p.id !== activePreset.id);
+            }
+            settings.activeTemplateId = 'classic';
+            context.saveSettingsDebounced();
+            refreshPresetsUI();
+
+            if (window.toastr) {
+                window.toastr.info(`Preset "${activePreset.name}" deleted. Switched to Classic preset.`);
+            }
+        });
+
+        // ==========================================
         // Bind Scanner Settings & Controls
         // ==========================================
         const scannerSettings = settings.scanner || {};
@@ -445,7 +647,7 @@ async function renderSettingsDrawer(settings) {
         const scannerDepthInput = $('#st_npc_scanner_depth');
         scannerDepthInput.val(scannerSettings.scanDepth ?? 10);
         scannerDepthInput.off('change').on('change', () => {
-            scannerSettings.scanDepth = parseInt(String(scannerDepthInput.val()), 10) || 10;
+            scannerSettings.scanDepth = Math.max(1, parseInt(String(scannerDepthInput.val()), 10) || 10);
             context.saveSettingsDebounced();
         });
 
@@ -494,9 +696,19 @@ async function renderSettingsDrawer(settings) {
 
         // Custom Scanner Prompt Textarea & Toggle
         const promptTextarea = $('#st_npc_scanner_prompt');
-        promptTextarea.val(scannerSettings.customPrompt || DEFAULT_EXTRACTION_PROMPT);
+        const currentActivePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+        promptTextarea.val(scannerSettings.customPrompt || currentActivePreset.extractionPrompt || DEFAULT_EXTRACTION_PROMPT);
+
         promptTextarea.off('input change').on('input change', () => {
-            scannerSettings.customPrompt = String(promptTextarea.val());
+            const active = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+            const val = String(promptTextarea.val() || '').trim();
+            const activePrompt = String(active.extractionPrompt || DEFAULT_EXTRACTION_PROMPT).trim();
+
+            if (!val || val === activePrompt) {
+                scannerSettings.customPrompt = '';
+            } else {
+                scannerSettings.customPrompt = String(promptTextarea.val());
+            }
             context.saveSettingsDebounced();
         });
 
@@ -515,11 +727,13 @@ async function renderSettingsDrawer(settings) {
 
         $(document).off('click', '#st_npc_btn_reset_prompt').on('click', '#st_npc_btn_reset_prompt', (e) => {
             e.preventDefault();
-            promptTextarea.val(DEFAULT_EXTRACTION_PROMPT);
-            scannerSettings.customPrompt = DEFAULT_EXTRACTION_PROMPT;
+            const active = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
+            const resetPrompt = active.extractionPrompt || DEFAULT_EXTRACTION_PROMPT;
+            promptTextarea.val(resetPrompt);
+            scannerSettings.customPrompt = '';
             context.saveSettingsDebounced();
             if (window.toastr) {
-                window.toastr.success('Extraction prompt reset to default.');
+                window.toastr.success(`Extraction prompt reset to "${active.name}" preset default.`);
             }
         });
 
@@ -633,15 +847,7 @@ async function renderSettingsDrawer(settings) {
             e.stopPropagation();
             try {
                 const jsonStr = exportDatabaseToJson();
-                const blob = new Blob([jsonStr], { type: 'application/json' });
-                const downloadUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = `npc_tracker_backup_${new Date().toISOString().slice(0, 10)}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(downloadUrl);
+                downloadJsonFile(`npc_tracker_backup_${new Date().toISOString().slice(0, 10)}.json`, jsonStr);
                 if (window.toastr) {
                     window.toastr.success('NPC Tracker database exported successfully.');
                 }
@@ -748,14 +954,15 @@ jQuery(async () => {
                 context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
                     const currentSettings = SillyTavern.getContext().extensionSettings?.[MODULE_NAME];
                     if (currentSettings?.enabled && currentSettings?.scanner?.settingAwareFilter) {
-                        syncPromptInjection(currentSettings);
-                        updateDrawerStats();
+                        const active = getActiveContextNpcs();
+                        syncPromptInjection(currentSettings, active);
+                        updateDrawerStats(active);
                     }
                 });
             }
         }
 
-        console.log('[NPC Tracker] Milestone 4 (v4) initialized successfully.');
+        console.log('[NPC Tracker] Extension initialized successfully.');
     } catch (err) {
         console.error('[NPC Tracker] Initialization failed:', err);
     }

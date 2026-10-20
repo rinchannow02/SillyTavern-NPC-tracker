@@ -58,6 +58,45 @@
                 </div>
             </div>
 
+            <!-- Database Template & Presets Manager -->
+            <div class="st-npc-section st-npc-prompt-wrapper" style="margin-top: 6px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px;">
+                <div class="st-npc-prompt-toggle-header" id="st_npc_preset_toggle" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                    <span><b><i class="fa-solid fa-chevron-right" id="st_npc_preset_chevron" style="margin-right: 6px; transition: transform 0.2s;"></i> Database Template & Presets</b></span>
+                    <span id="st_npc_active_preset_badge" class="st-npc-badge info">Classic</span>
+                </div>
+                <div id="st_npc_preset_body" style="display: none; margin-top: 8px;">
+                    <div class="st-npc-form-group">
+                        <label for="st_npc_preset_select"><span>Active Default Preset:</span></label>
+                        <select id="st_npc_preset_select" class="text_pole" style="margin-bottom: 4px;"></select>
+                        <div id="st_npc_preset_desc" style="font-size: 0.8em; opacity: 0.8; margin-bottom: 8px; font-style: italic;"></div>
+                    </div>
+
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+                        <button type="button" class="menu_button" id="st_npc_btn_export_preset" title="Export this preset to a portable JSON file">
+                            <i class="fa-solid fa-file-export"></i> Export (.json)
+                        </button>
+                        <label class="menu_button" style="cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 4px;" title="Import a preset JSON file">
+                            <i class="fa-solid fa-file-import"></i> Import (.json)
+                            <input type="file" id="st_npc_file_import_preset" accept=".json" style="display: none;" />
+                        </label>
+                        <button type="button" class="menu_button" id="st_npc_btn_duplicate_preset" title="Duplicate this preset to customize it">
+                            <i class="fa-solid fa-copy"></i> Duplicate
+                        </button>
+                        <button type="button" class="menu_button danger" id="st_npc_btn_delete_preset" style="display: none;" title="Delete this custom preset">
+                            <i class="fa-solid fa-trash"></i> Delete
+                        </button>
+                    </div>
+
+                    <!-- Preset Details Preview / Summary -->
+                    <div id="st_npc_preset_details_wrap" style="background: rgba(0,0,0,0.2); border-radius: 4px; padding: 6px 8px; font-size: 0.82em;">
+                        <div style="font-weight: bold; margin-bottom: 4px;"><i class="fa-solid fa-cubes"></i> Defined Attributes:</div>
+                        <div id="st_npc_preset_blocks_summary" style="opacity: 0.9; margin-bottom: 6px;"></div>
+                        <div style="font-weight: bold; margin-bottom: 2px;"><i class="fa-solid fa-code"></i> Paired Extraction Prompt:</div>
+                        <div id="st_npc_preset_prompt_preview" style="opacity: 0.75; font-family: monospace; white-space: pre-wrap; max-height: 80px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 3px;"></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="st-npc-section st-npc-stats-panel">
                 <div class="st-npc-stat-row">
                     <span class="st-npc-stat-label"><i class="fa-solid fa-database"></i> Database Engine:</span>

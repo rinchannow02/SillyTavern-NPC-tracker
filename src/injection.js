@@ -33,6 +33,30 @@ export function renderNpcSheet(npc) {
         content = content.replace(/\{\{aliases\}\}/gi, () => npc.aliases || '');
         content = content.replace(/\{\{(group|group_name)\}\}/gi, () => npc.group_name || '');
         content = content.replace(/\{\{(location|location_keywords)\}\}/gi, () => npc.location_keywords || '');
+
+        const blocks = Array.isArray(npc.blocks) ? npc.blocks : [];
+        const blockMap = new Map();
+        for (const b of blocks) {
+            if (b) {
+                if (b.id) blockMap.set(String(b.id).toLowerCase(), b.value || '');
+                if (b.label) blockMap.set(String(b.label).toLowerCase(), b.value || '');
+            }
+        }
+
+        content = content.replace(/\{\{appearance\}\}/gi, () => blockMap.get('appearance') || '');
+        content = content.replace(/\{\{personality\}\}/gi, () => blockMap.get('personality') || '');
+        content = content.replace(/\{\{relationship\}\}/gi, () => blockMap.get('relationship') || npc.relationship_summary || '');
+        content = content.replace(/\{\{([\w-]+)\}\}/g, (match, p1) => {
+            const lower = p1.toLowerCase();
+            if (['name', 'aliases', 'group', 'group_name', 'location', 'location_keywords', 'appearance', 'personality', 'relationship'].includes(lower)) {
+                return match;
+            }
+            if (blockMap.has(lower)) {
+                return blockMap.get(lower);
+            }
+            return match;
+        });
+
         return content.trim();
     }
 
@@ -62,6 +86,8 @@ export function renderNpcSheet(npc) {
     return lines.join('\n');
 }
 
+export const DEFAULT_INJECTION_TEMPLATE = '[Active NPCs in Context:\n{{npcs}}\n]';
+
 /**
  * Aggregates all active context NPCs into a consolidated prompt injection block.
  * @param {Array<Object>} npcs - List of active NPCs in current context.
@@ -74,19 +100,20 @@ export function formatActiveNpcsPrompt(npcs, customTemplate) {
     const renderedNpcs = npcs.map((npc) => renderNpcSheet(npc)).filter(Boolean);
     if (renderedNpcs.length === 0) return '';
 
-    if (customTemplate && typeof customTemplate === 'string' && customTemplate.includes('{{npcs}}')) {
-        return customTemplate.replace(/\{\{npcs\}\}/g, () => renderedNpcs.join('\n\n'));
-    }
+    const template = (customTemplate && typeof customTemplate === 'string' && customTemplate.includes('{{npcs}}'))
+        ? customTemplate
+        : DEFAULT_INJECTION_TEMPLATE;
 
-    return `[Active NPCs in Context:\n${renderedNpcs.join('\n\n')}\n]`;
+    return template.replace(/\{\{npcs\}\}/g, () => renderedNpcs.join('\n\n'));
 }
 
 /**
  * Synchronizes prompt injection by querying active context NPCs and invoking setExtensionPrompt.
  * @param {Object} [customSettings]
+ * @param {Array<Object>} [activeNpcsList] Optional pre-queried active context NPCs to avoid redundant lookups.
  * @returns {string} The injected prompt string.
  */
-export function syncPromptInjection(customSettings) {
+export function syncPromptInjection(customSettings, activeNpcsList = null) {
     const context = SillyTavern.getContext();
     const settings = customSettings || context.extensionSettings?.['npc_tracker'] || {};
 
@@ -95,7 +122,7 @@ export function syncPromptInjection(customSettings) {
         return '';
     }
 
-    const activeNpcs = getActiveContextNpcs();
+    const activeNpcs = Array.isArray(activeNpcsList) ? activeNpcsList : getActiveContextNpcs();
     if (!activeNpcs || activeNpcs.length === 0) {
         clearPromptInjection();
         lastInjectedPrompt = '';

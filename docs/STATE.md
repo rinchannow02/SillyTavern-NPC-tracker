@@ -1,8 +1,9 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.0.1` (Tagged `v1.0.1`)
+- **Current Version:** `1.1.0`
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
+- **Versioning Policy:** `1.x.x` (Major), `x.1.x` (Feature updates), `x.x.1` (Minor / hotfix / security)
 - **Base Integration Branch:** `staging`
 - **Production Release Branch:** `main`
 
@@ -17,7 +18,7 @@
 ## Active Feature Branches
 | Feature Branch | Status | Assigned Lane / Agent | Scope Summary |
 | :--- | :--- | :--- | :--- |
-| *(None active)* | — | — | Ready for new feature branches off `staging` |
+| `feat/block-template-conversion` | `COMPLETED` | Antigravity AI | Two-way conversion with prompt on tab change between Block Editor and Freeform Template, hierarchical Group / Sub-Group tree selector, customizable genre presets (Slice-of-Life, Adventure, RPG, Classic) with export/import and template selectors |
 
 ## Active Decisions & Constraints
 - Module Name: `npc_tracker`
@@ -71,5 +72,22 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 - **R6:** `DEFAULT_BLOCKS` is deep-frozen; import and `getActiveContextNpcs` return block copies.
 - **R7:** `.gitattributes` was deleted.
 - **R8:** Storage uses `SillyTavern.libs.localforage`.
-- **R9:** Docs corrected. Run the tests with `node --test` (no path argument); 8/8 pass.
+- **R9:** Docs corrected. Run the tests with `node --test` (no path argument); 27/27 pass across import, converter, and preset suites.
+
+## Third Audit Resolution — 1.1.0 Pre-Release (2026-10-20)
+- **S1 & S2 (Stored XSS):** Escaped `safeTitle` and `safeMessage` with `escapeHtml` in `askUserConfirm` (`src/ui/editor.js`). Routed `deleteNpcFromModal` through `askUserConfirm`, eliminating stored XSS from untrusted NPC names and preset names.
+- **C1 (Label & Block Loss):** Broadened label regexes to allow `&` (e.g. `Race & Class`, `Weapons & Gear`, `Tone & Speaking Style`). Matched `currentNpc.blocks` by lowercased label before creating new blocks to preserve custom IDs and ordering without collapsing into Notes. Added round-trip test across all built-in presets.
+- **C2 (Scanner Prompt Override):** Synced scanner prompt textarea with the active preset. Resetting prompt sets `customPrompt = ''` and restores the active preset's extraction prompt.
+- **C3 (Prototype & Serialization Safety):** Sanitized prototype property names (`constructor`, `__proto__`, etc.) in `validatePreset`. Enforced safe primitive string extraction via `Object.hasOwn` in chat scanner and coerced `relationship_summary` to string in SQLite store.
+- **C4 (Mid-scan Chat Context):** Captured and passed `context` through `findExistingNpc` to prevent cross-chat merge collisions.
+- **C5 (Preset Collision):** Renamed imported presets matching built-in IDs to `custom_${Date.now()}`.
+- **I1 & I2 (Macro & Injection Notice):** Added documentation in README regarding SillyTavern macro evaluation on prompt strings.
+- **I4 (Negative Scan Depth Clamping):** Clamped scanner and setting-aware trigger depth to `Math.max(1, ...)` in `chat-scanner.js`, `index.js`, and `evaluateSettingAwareTriggers`.
+- **P2 Cleanup & Efficiency:**
+  - Removed dead `blocks_json` stringification from in-memory `getNpcById` and `getActiveContextNpcs` calls.
+  - Eliminated redundant per-turn injection syncs from message sent/rendered handlers, synchronizing on `GENERATION_STARTED` only and passing pre-queried active NPC lists into `updateDrawerStats`.
+  - Extracted shared `normalizeLink(l)` helper in `src/db/sqlite-store.js` and unified browser JSON downloads via `downloadJsonFile(filename, jsonStr)` in `index.js`.
+  - Fixed indentation of `scanRecentChat`, removed model vendor hint ("GLM-5.3-flash"), and cleaned up stale SQLite/Milestone 4 comments across the codebase.
+  - Dropped meaningless `id: Date.now()` generation on embedded scope links.
+- **Verification:** 28/28 unit tests passing via `node --test test/*.mjs`.
 
