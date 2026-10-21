@@ -9,6 +9,13 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.1.2] - 2026-10-21
+
+### Added
+- **Group & Sub-Group Deletion:** Added delete actions (trash icon) to every row in the "Existing Groups & Sub-Groups" tree picker with confirmation dialogs. Deleting a parent group cleans it across all assigned NPCs, and deleting a sub-group cleanly reverts assigned NPCs back to the parent group.
+
+---
+
 ## [1.1.1] - 2026-10-21
 
 ### Fixed

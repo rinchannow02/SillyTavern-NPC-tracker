@@ -15,6 +15,8 @@ import {
     setNpcScopeStatus,
     getNpcGroups,
     getNpcGroupHierarchy,
+    deleteGroup,
+    countNpcsInGroup,
     resolveScopeTarget,
     DEFAULT_BLOCKS,
 } from '../db/sqlite-store.js';
@@ -195,7 +197,7 @@ function bindModalEvents() {
 
     // Parent row click (toggles parent checkbox)
     $(document).off('click', '.st-npc-tree-parent-node > .st-npc-tree-row').on('click', '.st-npc-tree-parent-node > .st-npc-tree-row', function (e) {
-        if ($(e.target).is('input[type="checkbox"]')) return;
+        if ($(e.target).is('input[type="checkbox"]') || $(e.target).closest('.st-npc-btn-tree-delete').length) return;
         const cb = $(this).find('.st-npc-parent-cb');
         cb.prop('checked', !cb.prop('checked')).trigger('click');
     });
@@ -216,9 +218,83 @@ function bindModalEvents() {
 
     // Sub-group row click (toggles sub checkbox)
     $(document).off('click', '.st-npc-tree-sub-list > .st-npc-tree-row').on('click', '.st-npc-tree-sub-list > .st-npc-tree-row', function (e) {
-        if ($(e.target).is('input[type="checkbox"]')) return;
+        if ($(e.target).is('input[type="checkbox"]') || $(e.target).closest('.st-npc-btn-tree-delete').length) return;
         const cb = $(this).find('.st-npc-sub-cb');
         cb.prop('checked', !cb.prop('checked')).trigger('click');
+    });
+
+    // Delete Parent Group
+    $(document).off('click', '.st-npc-btn-delete-parent').on('click', '.st-npc-btn-delete-parent', async function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        const groupName = $(this).attr('data-group');
+        if (!groupName) return;
+
+        const count = countNpcsInGroup(groupName, false);
+        const msg = count > 0
+            ? `Are you sure you want to delete group "${groupName}"? It will be removed from ${count} NPC(s).`
+            : `Are you sure you want to delete group "${groupName}"?`;
+
+        const confirm = await askUserConfirm(`Delete Group "${groupName}"`, msg);
+        if (!confirm) return;
+
+        deleteGroup(groupName, false);
+
+        sessionCustomGroups = sessionCustomGroups.filter((g) => {
+            const parts = g.split('/').map((s) => s.trim()).filter(Boolean);
+            return parts[0] !== groupName;
+        });
+
+        const currentInput = String($('#st_npc_edit_group').val() || '').trim();
+        if (currentInput === groupName || currentInput.startsWith(`${groupName} /`)) {
+            $('#st_npc_edit_group').val('').trigger('input');
+        }
+
+        renderGroupTree();
+        if (typeof onModalSavedCallback === 'function') {
+            onModalSavedCallback();
+        }
+        if (window.toastr) {
+            window.toastr.success(`Deleted group "${groupName}".`);
+        }
+    });
+
+    // Delete Sub-Group
+    $(document).off('click', '.st-npc-btn-delete-sub').on('click', '.st-npc-btn-delete-sub', async function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        const parent = $(this).attr('data-parent');
+        const sub = $(this).attr('data-sub');
+        if (!parent || !sub) return;
+
+        const fullPath = `${parent} / ${sub}`;
+        const count = countNpcsInGroup(fullPath, true);
+        const msg = count > 0
+            ? `Are you sure you want to delete sub-group "${sub}" under "${parent}"? It will be removed from ${count} NPC(s).`
+            : `Are you sure you want to delete sub-group "${sub}" under "${parent}"?`;
+
+        const confirm = await askUserConfirm(`Delete Sub-Group "${sub}"`, msg);
+        if (!confirm) return;
+
+        deleteGroup(fullPath, true);
+
+        sessionCustomGroups = sessionCustomGroups.filter((g) => g !== fullPath && !g.startsWith(`${fullPath} /`));
+
+        const currentInput = String($('#st_npc_edit_group').val() || '').trim();
+        if (currentInput === fullPath) {
+            $('#st_npc_edit_group').val(parent).trigger('input');
+        } else if (currentInput.startsWith(`${fullPath} /`)) {
+            const rest = currentInput.slice(fullPath.length + 3).trim();
+            $('#st_npc_edit_group').val(parent ? `${parent} / ${rest}` : rest).trigger('input');
+        }
+
+        renderGroupTree();
+        if (typeof onModalSavedCallback === 'function') {
+            onModalSavedCallback();
+        }
+        if (window.toastr) {
+            window.toastr.success(`Deleted sub-group "${sub}".`);
+        }
     });
 
     // Template Preset selector change
@@ -667,7 +743,14 @@ function renderGroupTree() {
             .addClass('st-npc-tree-label')
             .append($('<b>').text(group.name));
 
-        parentRow.append(parentCb, parentLabel);
+        const deleteParentBtn = $('<button>')
+            .attr('type', 'button')
+            .addClass('st-npc-btn-tree-delete st-npc-btn-delete-parent')
+            .attr('data-group', group.name)
+            .attr('title', `Delete group "${group.name}"`)
+            .append($('<i>').addClass('fa-solid fa-trash-can'));
+
+        parentRow.append(parentCb, parentLabel, deleteParentBtn);
         parentNode.append(parentRow);
 
         // Sub-groups list
@@ -691,7 +774,15 @@ function renderGroupTree() {
                     .addClass('st-npc-tree-sub-label')
                     .text(sub);
 
-                subRow.append(subCb, subLabel);
+                const deleteSubBtn = $('<button>')
+                    .attr('type', 'button')
+                    .addClass('st-npc-btn-tree-delete st-npc-btn-delete-sub')
+                    .attr('data-parent', group.name)
+                    .attr('data-sub', sub)
+                    .attr('title', `Delete sub-group "${sub}"`)
+                    .append($('<i>').addClass('fa-solid fa-trash-can'));
+
+                subRow.append(subCb, subLabel, deleteSubBtn);
                 subList.append(subRow);
             }
 

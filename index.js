@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (v1.1.1: Customizable Templates, LLM Chat Scanner, Presets & Setting-Aware Engine)
+ * @description Entry point for SillyTavern-NPC-tracker (v1.1.2: Customizable Templates, LLM Chat Scanner, Presets & Setting-Aware Engine)
  */
 
 import {
@@ -14,6 +14,8 @@ import {
     getNpcScopes,
     setNpcScopeStatus,
     getNpcGroups,
+    deleteGroup,
+    countNpcsInGroup,
     getActiveContextNpcs,
     resolveScopeTarget,
     exportDatabaseToJson,
@@ -919,6 +921,8 @@ jQuery(async () => {
             getNpcScopes,
             setNpcScopeStatus,
             getNpcGroups,
+            deleteGroup,
+            countNpcsInGroup,
             getActiveContextNpcs,
             exportJson: exportDatabaseToJson,
             importJson: importDatabaseFromJson,

@@ -259,3 +259,39 @@ test('index.js - scannerSettings is initialized before refreshPresetsUI or any r
         'scannerSettings must be declared before refreshPresetsUI() is invoked'
     );
 });
+
+test('deleteGroup & countNpcsInGroup - parent and sub-group deletion behavior', async () => {
+    const { createNpc, deleteNpc, deleteGroup, countNpcsInGroup, getNpcById } = await import('../src/db/sqlite-store.js');
+
+    const id1 = createNpc({ name: 'NPC 1', group_name: 'Mirai Industries IT' });
+    const id2 = createNpc({ name: 'NPC 2', group_name: 'Mirai Industries IT / Cybersecurity Division' });
+    const id3 = createNpc({ name: 'NPC 3', group_name: 'Mirai Industries IT / Infrastructure' });
+    const id4 = createNpc({ name: 'NPC 4', group_name: 'Accounting Department' });
+
+    try {
+        // Test countNpcsInGroup
+        assert.equal(countNpcsInGroup('Mirai Industries IT'), 3);
+        assert.equal(countNpcsInGroup('Mirai Industries IT / Cybersecurity Division', true), 1);
+        assert.equal(countNpcsInGroup('Accounting Department'), 1);
+        assert.equal(countNpcsInGroup('Nonexistent Group'), 0);
+
+        // Delete sub-group Cybersecurity Division
+        const affectedSub = deleteGroup('Mirai Industries IT / Cybersecurity Division', true);
+        assert.equal(affectedSub, 1);
+        assert.equal(getNpcById(id2).group_name, 'Mirai Industries IT', 'Sub-group deletion should fallback to parent group');
+        assert.equal(getNpcById(id3).group_name, 'Mirai Industries IT / Infrastructure', 'Other sub-group should remain untouched');
+
+        // Delete parent group Mirai Industries IT
+        const affectedParent = deleteGroup('Mirai Industries IT', false);
+        assert.equal(affectedParent, 3);
+        assert.equal(getNpcById(id1).group_name, '', 'Parent group deletion should clear group');
+        assert.equal(getNpcById(id2).group_name, '', 'NPC fallen back to parent should be cleared');
+        assert.equal(getNpcById(id3).group_name, '', 'Sub-groups under parent should be cleared');
+        assert.equal(getNpcById(id4).group_name, 'Accounting Department', 'Unrelated group must remain untouched');
+    } finally {
+        deleteNpc(id1);
+        deleteNpc(id2);
+        deleteNpc(id3);
+        deleteNpc(id4);
+    }
+});

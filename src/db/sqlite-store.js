@@ -366,6 +366,75 @@ export function getNpcGroupHierarchy() {
 }
 
 /**
+ * Counts how many NPCs belong to a group or sub-group.
+ * @param {string} targetPath
+ * @param {boolean} [isSubGroup=false]
+ * @returns {number}
+ */
+export function countNpcsInGroup(targetPath, isSubGroup = false) {
+    if (!targetPath || typeof targetPath !== 'string') return 0;
+    const cleanPath = targetPath.trim();
+    if (!cleanPath) return 0;
+
+    let count = 0;
+    for (const npc of npcs) {
+        if (!npc.group_name || typeof npc.group_name !== 'string') continue;
+        const current = npc.group_name.trim();
+        if (current === cleanPath || current.startsWith(`${cleanPath} /`)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/**
+ * Deletes a group or sub-group from all NPCs in the database.
+ * @param {string} targetPath - e.g. "Accounting Department" or "Mirai Industries IT / Cybersecurity Division"
+ * @param {boolean} [isSubGroup=false]
+ * @returns {number} Number of NPCs modified
+ */
+export function deleteGroup(targetPath, isSubGroup = false) {
+    if (!targetPath || typeof targetPath !== 'string') return 0;
+    const cleanPath = targetPath.trim();
+    if (!cleanPath) return 0;
+
+    let affectedCount = 0;
+
+    for (const npc of npcs) {
+        if (!npc.group_name || typeof npc.group_name !== 'string') continue;
+        const current = npc.group_name.trim();
+
+        if (isSubGroup) {
+            if (current === cleanPath) {
+                const parts = cleanPath.split('/').map((s) => s.trim()).filter(Boolean);
+                npc.group_name = parts.length > 1 ? parts.slice(0, -1).join(' / ') : '';
+                npc.updated_at = Date.now();
+                affectedCount++;
+            } else if (current.startsWith(`${cleanPath} /`)) {
+                const parts = cleanPath.split('/').map((s) => s.trim()).filter(Boolean);
+                const parent = parts.slice(0, -1).join(' / ');
+                const rest = current.slice(cleanPath.length + 3).trim();
+                npc.group_name = parent ? `${parent} / ${rest}` : rest;
+                npc.updated_at = Date.now();
+                affectedCount++;
+            }
+        } else {
+            if (current === cleanPath || current.startsWith(`${cleanPath} /`)) {
+                npc.group_name = '';
+                npc.updated_at = Date.now();
+                affectedCount++;
+            }
+        }
+    }
+
+    if (affectedCount > 0) {
+        scheduleSave();
+    }
+
+    return affectedCount;
+}
+
+/**
  * Retrieves all NPCs linked to the active context (chatId, character, persona, or global).
  * Deduplicates multiple links using priority: chat > character > persona > global.
  * @param {Object} [customContext]
