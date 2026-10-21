@@ -9,6 +9,13 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.1.1] - 2026-10-21
+
+### Fixed
+- **Settings Drawer Initialization:** Fixed a Temporal Dead Zone `ReferenceError: Cannot access 'scannerSettings' before initialization` where `refreshPresetsUI()` accessed `scannerSettings` before its declaration during drawer setup.
+
+---
+
 ## [1.1.0] - 2026-10-20
 
 ### Added

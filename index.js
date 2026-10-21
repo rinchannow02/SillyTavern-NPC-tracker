@@ -1,6 +1,6 @@
 /**
  * @file index.js
- * @description Entry point for SillyTavern-NPC-tracker (v1.1.0: Customizable Templates, LLM Chat Scanner, Presets & Setting-Aware Engine)
+ * @description Entry point for SillyTavern-NPC-tracker (v1.1.1: Customizable Templates, LLM Chat Scanner, Presets & Setting-Aware Engine)
  */
 
 import {
@@ -307,6 +307,11 @@ async function renderSettingsDrawer(settings) {
         $('.st-npc-settings').remove();
         container.append(templateHtml);
 
+        if (!settings.scanner) {
+            settings.scanner = {};
+        }
+        const scannerSettings = settings.scanner;
+
         // Bind Enable/Disable toggle
         const enabledCheckbox = $('#st_npc_enabled');
         enabledCheckbox.prop('checked', Boolean(settings.enabled));
@@ -577,7 +582,6 @@ async function renderSettingsDrawer(settings) {
         // ==========================================
         // Bind Scanner Settings & Controls
         // ==========================================
-        const scannerSettings = settings.scanner || {};
 
         // Scanner Profile Dropdown & Refresh
         const profileSelect = $('#st_npc_scanner_profile');

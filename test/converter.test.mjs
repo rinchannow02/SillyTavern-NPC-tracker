@@ -243,3 +243,19 @@ test('evaluateSettingAwareTriggers clamps negative or invalid scan depth (I4)', 
     const resNegative = evaluateSettingAwareTriggers(testNpcs, -10);
     assert.equal(resNegative.length, 2);
 });
+
+test('index.js - scannerSettings is initialized before refreshPresetsUI or any references', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const indexJs = fs.readFileSync(path.resolve('index.js'), 'utf-8');
+
+    const scannerSettingsDecl = indexJs.indexOf('const scannerSettings =');
+    const refreshPresetsCall = indexJs.indexOf('refreshPresetsUI();');
+
+    assert.ok(scannerSettingsDecl !== -1, 'scannerSettings must be declared in index.js');
+    assert.ok(refreshPresetsCall !== -1, 'refreshPresetsUI() call must exist in index.js');
+    assert.ok(
+        scannerSettingsDecl < refreshPresetsCall,
+        'scannerSettings must be declared before refreshPresetsUI() is invoked'
+    );
+});
