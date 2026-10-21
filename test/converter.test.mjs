@@ -295,3 +295,30 @@ test('deleteGroup & countNpcsInGroup - parent and sub-group deletion behavior', 
         deleteNpc(id4);
     }
 });
+
+test('sub-group addition under existing parent group produces valid hierarchy path', async () => {
+    const { createNpc, deleteNpc, getNpcGroupHierarchy } = await import('../src/db/sqlite-store.js');
+
+    const id1 = createNpc({ name: 'Hikari Chief', group_name: 'Hikari Co.' });
+    try {
+        const hierarchyBefore = getNpcGroupHierarchy();
+        const hikariBefore = hierarchyBefore.find((g) => g.name === 'Hikari Co.');
+        assert.ok(hikariBefore);
+        assert.deepEqual(hikariBefore.subGroups, []);
+
+        // Add an NPC with sub-group under existing parent
+        const subGroupPath = `${hikariBefore.name} / Data Analyst`;
+        const id2 = createNpc({ name: 'Hikari Analyst', group_name: subGroupPath });
+
+        try {
+            const hierarchyAfter = getNpcGroupHierarchy();
+            const hikariAfter = hierarchyAfter.find((g) => g.name === 'Hikari Co.');
+            assert.ok(hikariAfter);
+            assert.deepEqual(hikariAfter.subGroups, ['Data Analyst']);
+        } finally {
+            deleteNpc(id2);
+        }
+    } finally {
+        deleteNpc(id1);
+    }
+});

@@ -155,13 +155,27 @@ function bindModalEvents() {
     // Add Custom Group / Sub-group
     $(document).off('click', '#st_npc_btn_add_custom_group').on('click', '#st_npc_btn_add_custom_group', (e) => {
         e.preventDefault();
-        const parentInput = String($('#st_npc_new_parent_group').val() || '').trim();
+        let parentInput = String($('#st_npc_new_parent_group').val() || '').trim();
         const subInput = String($('#st_npc_new_sub_group').val() || '').trim();
 
+        // If parentInput is empty but subInput is provided, fall back to currently selected group
+        if (!parentInput && subInput) {
+            const currentVal = String($('#st_npc_edit_group').val() || '').trim();
+            const parts = currentVal.split('/').map((s) => s.trim()).filter(Boolean);
+            const activeParent = parts[0] || $('.st-npc-parent-cb:checked').first().attr('data-group') || '';
+            if (activeParent) {
+                parentInput = activeParent;
+            }
+        }
+
         if (!parentInput) {
-            if (window.toastr) window.toastr.warning('Please enter a Group name.');
+            if (window.toastr) window.toastr.warning('Please enter a Group name or select an existing group first.');
             $('#st_npc_new_parent_group').focus();
             return;
+        }
+
+        if (!sessionCustomGroups.includes(parentInput)) {
+            sessionCustomGroups.push(parentInput);
         }
 
         const newPath = subInput ? `${parentInput} / ${subInput}` : parentInput;
@@ -173,6 +187,14 @@ function bindModalEvents() {
         $('#st_npc_new_sub_group').val('');
         renderGroupTree();
         if (window.toastr) window.toastr.success(`Selected group: ${newPath}`);
+    });
+
+    // Enter key in group add inputs triggers +Add
+    $(document).off('keydown', '#st_npc_new_parent_group, #st_npc_new_sub_group').on('keydown', '#st_npc_new_parent_group, #st_npc_new_sub_group', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            $('#st_npc_btn_add_custom_group').trigger('click');
+        }
     });
 
     // Group input change -> sync tree checkboxes if panel is visible
@@ -717,6 +739,12 @@ function renderGroupTree() {
     const parts = currentVal.split('/').map((s) => s.trim()).filter(Boolean);
     const activeParent = parts[0] || '';
     const activeSub = parts.slice(1).join(' / ') || '';
+
+    if (activeParent) {
+        $('#st_npc_new_parent_group').attr('placeholder', `Selected: ${activeParent}`);
+    } else {
+        $('#st_npc_new_parent_group').attr('placeholder', 'New Group...');
+    }
 
     if (hierarchy.length === 0) {
         container.html('<div class="st-npc-tree-empty">No groups found. Enter a new group above to add one.</div>');
