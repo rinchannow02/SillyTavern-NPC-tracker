@@ -9,6 +9,17 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.2.0] - 2026-10-22
+
+### Added
+- **Multi-Device Server Sync (PC & Mobile):**
+  - Implemented dual-layer persistence combining ultra-fast local client caching (`localforage` / IndexedDB) with SillyTavern's native server settings synchronization (`extensionSettings.npc_tracker.server_db` and `context.saveSettingsDebounced()`).
+  - Added smart hydration and conflict resolution in `mergeNpcCollections()`: mobile devices connecting for the first time automatically pull the complete NPC database from the server without requiring manual export/import steps.
+  - Conflicts between devices are resolved by timestamp comparison (`updated_at`), preserving any new NPCs or edits made on either device without data loss.
+  - Added user toggle `Sync Database to Server (Multi-Device)` under Database Management in the NPC Tracker settings drawer (enabled by default).
+
+---
+
 ## [1.1.4] - 2026-10-22
 
 ### Added

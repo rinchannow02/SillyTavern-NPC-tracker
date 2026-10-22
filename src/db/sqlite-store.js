@@ -5,6 +5,7 @@
  */
 
 const STORAGE_KEY = 'st_npc_tracker_data';
+const MODULE_NAME = 'npc_tracker';
 
 export const DEFAULT_BLOCKS = Object.freeze([
     { id: 'appearance', label: 'Appearance', type: 'text', value: '' },
@@ -73,7 +74,43 @@ export function resolveScopeTarget(scopeType, context) {
 }
 
 /**
- * Initializes the database from localforage.
+ * Merges local and server NPC collections cleanly without losing records created on either device.
+ * For conflicting IDs, the record with the higher updated_at timestamp wins.
+ * @param {Array<Object>} localList
+ * @param {Array<Object>} serverList
+ * @returns {Array<Object>}
+ */
+export function mergeNpcCollections(localList = [], serverList = []) {
+    if (!Array.isArray(localList)) localList = [];
+    if (!Array.isArray(serverList)) serverList = [];
+
+    const map = new Map();
+
+    for (const npc of localList) {
+        if (!npc || !npc.id) continue;
+        map.set(npc.id, npc);
+    }
+
+    for (const serverNpc of serverList) {
+        if (!serverNpc || !serverNpc.id) continue;
+        if (!map.has(serverNpc.id)) {
+            map.set(serverNpc.id, serverNpc);
+        } else {
+            const existing = map.get(serverNpc.id);
+            const serverTs = serverNpc.updated_at || serverNpc.created_at || 0;
+            const localTs = existing.updated_at || existing.created_at || 0;
+
+            if (serverTs >= localTs) {
+                map.set(serverNpc.id, serverNpc);
+            }
+        }
+    }
+
+    return Array.from(map.values()).sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+}
+
+/**
+ * Initializes the database from localforage and/or SillyTavern server settings.
  * The legacy SQLite key (st_npc_tracker_sqlite_db) is left untouched so pre-JSON data stays recoverable.
  * @returns {Promise<boolean>}
  */
@@ -86,23 +123,59 @@ export async function initDatabase() {
     }
 
     const lf = getLocalforage();
+    let localNpcs = [];
+
     try {
         const raw = lf ? await lf.getItem(STORAGE_KEY) : null;
-        npcs = Array.isArray(raw) ? raw : [];
+        localNpcs = Array.isArray(raw) ? raw : [];
     } catch (err) {
         // Never save over data we could not read.
         loadFailed = true;
         npcs = [];
         console.error('[NPC Tracker] Failed to load JSON database from localforage:', err);
         window.toastr?.error('NPC Tracker could not load its data. Changes will not be saved until reload.');
+        return false;
     }
 
-    console.log(`[NPC Tracker] Database initialized with ${npcs.length} NPC(s) (Plain JSON engine).`);
+    // Server-sync check via SillyTavern context
+    const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext?.() : null;
+    const settings = context?.extensionSettings?.[MODULE_NAME];
+    const isServerSync = settings ? settings.serverSync !== false : true;
+
+    if (isServerSync && settings) {
+        const serverNpcs = Array.isArray(settings.server_db) ? settings.server_db : [];
+        if (serverNpcs.length > 0 || localNpcs.length > 0) {
+            npcs = mergeNpcCollections(localNpcs, serverNpcs);
+
+            // If local storage was empty or changed, update local cache
+            const localJson = JSON.stringify(localNpcs);
+            const mergedJson = JSON.stringify(npcs);
+            if (lf && localJson !== mergedJson) {
+                try {
+                    await lf.setItem(STORAGE_KEY, npcs);
+                } catch (_) {}
+            }
+
+            // If server settings had no NPCs or was out of sync, seed server settings
+            const serverJson = JSON.stringify(serverNpcs);
+            if (serverJson !== mergedJson) {
+                settings.server_db = npcs;
+                settings.server_db_updated_at = Date.now();
+                context.saveSettingsDebounced?.();
+            }
+        } else {
+            npcs = [];
+        }
+    } else {
+        npcs = localNpcs;
+    }
+
+    console.log(`[NPC Tracker] Database initialized with ${npcs.length} NPC(s) (Plain JSON engine, serverSync=${isServerSync}).`);
     return true;
 }
 
 /**
- * Schedules a debounced persistence write to localforage.
+ * Schedules a debounced persistence write to localforage and server settings.
  */
 function scheduleSave() {
     if (saveTimer) clearTimeout(saveTimer);
@@ -112,16 +185,36 @@ function scheduleSave() {
 }
 
 /**
- * Persists current NPC collection directly to localforage.
+ * Persists current NPC collection directly to localforage and optionally syncs to ST server settings.
  * @returns {Promise<void>}
  */
 export async function saveDatabaseNow() {
+    if (loadFailed) return;
     const lf = getLocalforage();
-    if (loadFailed || !lf) return;
+
+    // 1. Client cache (localforage)
+    if (lf) {
+        try {
+            await lf.setItem(STORAGE_KEY, npcs);
+        } catch (err) {
+            console.error('[NPC Tracker] Failed to persist data to localforage:', err);
+        }
+    }
+
+    // 2. Server settings sync (multi-device)
     try {
-        await lf.setItem(STORAGE_KEY, npcs);
+        const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext?.() : null;
+        if (context?.extensionSettings?.[MODULE_NAME] && typeof context.saveSettingsDebounced === 'function') {
+            const settings = context.extensionSettings[MODULE_NAME];
+            const isServerSync = settings.serverSync !== false;
+            if (isServerSync) {
+                settings.server_db = npcs;
+                settings.server_db_updated_at = Date.now();
+                context.saveSettingsDebounced();
+            }
+        }
     } catch (err) {
-        console.error('[NPC Tracker] Failed to persist data to localforage:', err);
+        console.debug('[NPC Tracker] Server settings sync error:', err);
     }
 }
 

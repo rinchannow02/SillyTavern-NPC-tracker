@@ -451,3 +451,104 @@ test('sub-group addition under existing parent group produces valid hierarchy pa
         deleteNpc(id1);
     }
 });
+
+test('mergeNpcCollections - merges local and server databases without data loss', async () => {
+    const { mergeNpcCollections } = await import('../src/db/sqlite-store.js');
+
+    const npc1 = { id: 'uuid-1', name: 'Inue-san', updated_at: 100, created_at: 100 };
+    const npc2 = { id: 'uuid-2', name: 'Haze (local)', updated_at: 150, created_at: 100 };
+    const npc2Server = { id: 'uuid-2', name: 'Haze (server newer)', updated_at: 200, created_at: 100 };
+    const npc3Server = { id: 'uuid-3', name: 'Wisdom', updated_at: 120, created_at: 120 };
+
+    // 1. Mobile initial load (local empty, server has records)
+    const mobileInit = mergeNpcCollections([], [npc1, npc2Server]);
+    assert.equal(mobileInit.length, 2);
+    assert.equal(mobileInit[0].name, 'Inue-san');
+
+    // 2. Both sides have unique and conflicting records
+    const merged = mergeNpcCollections([npc1, npc2], [npc2Server, npc3Server]);
+    assert.equal(merged.length, 3);
+    const haze = merged.find((n) => n.id === 'uuid-2');
+    assert.equal(haze.name, 'Haze (server newer)', 'Newer timestamp must win conflict');
+    assert.ok(merged.some((n) => n.id === 'uuid-3'), 'Unique server NPC must be merged');
+    assert.ok(merged.some((n) => n.id === 'uuid-1'), 'Unique local NPC must be retained');
+});
+
+test('saveDatabaseNow - mirrors npcs to extensionSettings.server_db when serverSync is true', async () => {
+    const { saveDatabaseNow, createNpc, deleteNpc } = await import('../src/db/sqlite-store.js');
+
+    let savedDebouncedCalled = false;
+    const testContext = {
+        extensionSettings: {
+            npc_tracker: {
+                serverSync: true,
+            },
+        },
+        saveSettingsDebounced: () => {
+            savedDebouncedCalled = true;
+        },
+    };
+
+    globalThis.SillyTavern = {
+        getContext: () => testContext,
+        libs: {
+            localforage: {
+                setItem: async () => {},
+                getItem: async () => null,
+            },
+        },
+    };
+
+    const id = createNpc({ name: 'Sync Test NPC', group_name: 'Hikari Co.' });
+    try {
+        await saveDatabaseNow();
+        const settings = globalThis.SillyTavern.getContext().extensionSettings.npc_tracker;
+        assert.ok(savedDebouncedCalled, 'saveSettingsDebounced must be triggered');
+        assert.ok(Array.isArray(settings.server_db), 'server_db must be an array');
+        assert.ok(settings.server_db.some((n) => n.id === id), 'created NPC must exist in server_db');
+        assert.ok(settings.server_db_updated_at > 0, 'server_db_updated_at must be populated');
+    } finally {
+        deleteNpc(id);
+    }
+});
+
+test('initDatabase - hydrates from extensionSettings.server_db when local storage is empty', async () => {
+    const { initDatabase, getNpcById } = await import('../src/db/sqlite-store.js');
+
+    let seededItem = null;
+    const serverNpc = {
+        id: '11111111-2222-3333-4444-555555555555',
+        name: 'Mobile Hydrated NPC',
+        group_name: 'Hikari Co. / Accounting',
+        blocks: [],
+        links: [],
+    };
+
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            extensionSettings: {
+                npc_tracker: {
+                    serverSync: true,
+                    server_db: [serverNpc],
+                },
+            },
+            saveSettingsDebounced: () => {},
+        }),
+        libs: {
+            localforage: {
+                getItem: async () => null, // empty local storage (like a new device)
+                setItem: async (key, val) => {
+                    seededItem = val;
+                },
+            },
+        },
+    };
+
+    await initDatabase();
+    const fetched = getNpcById(serverNpc.id);
+    assert.ok(fetched, 'NPC from server_db must be loaded into memory');
+    assert.equal(fetched.name, 'Mobile Hydrated NPC');
+    assert.ok(Array.isArray(seededItem), 'localforage must be seeded with server NPCs');
+    assert.ok(seededItem.some((n) => n.id === serverNpc.id), 'seeded localforage must contain server NPC');
+});
+

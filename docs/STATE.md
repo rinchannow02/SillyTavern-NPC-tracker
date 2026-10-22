@@ -1,7 +1,7 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.1.4`
+- **Current Version:** `1.2.0`
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
 - **Versioning Policy:** `1.x.x` (Major), `x.1.x` (Feature updates), `x.x.1` (Minor / hotfix / security)
 - **Base Integration Branch:** `staging`
@@ -19,6 +19,7 @@
 | Feature Branch | Status | Assigned Lane / Agent | Scope Summary |
 | :--- | :--- | :--- | :--- |
 | `feat/block-template-conversion` | `COMPLETED` | Antigravity AI | Two-way conversion with prompt on tab change between Block Editor and Freeform Template, hierarchical Group / Sub-Group tree selector, customizable genre presets (Slice-of-Life, Adventure, RPG, Classic) with export/import and template selectors |
+| `feat/server-sync-storage` | `COMPLETED` | Antigravity AI | Multi-device server-synced persistence leveraging SillyTavern's native settings synchronization (`extensionSettings[MODULE_NAME]` + `saveSettingsDebounced`) with localforage fast client caching and conflict resolution |
 
 ## Active Decisions & Constraints
 - Module Name: `npc_tracker`
@@ -102,7 +103,12 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 - **Hierarchical Group Formatting in Presets:** Updated extraction prompts across all built-in presets (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`) and `DEFAULT_EXTRACTION_PROMPT` with explicit `"Parent / Subgroup"` syntax rules (e.g. `"Hikari Co. / Accounting"`, `"Hikari Co. / IT"`). Emphasized consistent parent organization names so NPCs belonging to the same entity collapse into a unified parent folder instead of fragmenting into separate top-level folders.
 - **Title Leakage Prevention:** Enforced strict negative rules barring LLMs from injecting job titles, ranks, or positions (e.g. `(Section Chief)`, `Captain`, `Lead`) into `group_name`. Reinforced that organizational roles belong strictly in the character sheet's `occupation`, `role_class`, or `faction_role` block.
 - **Defensive Group Normalization & Delimiter Conversion:** Implemented `cleanAndNormalizeGroupName()` in `src/scanner/chat-scanner.js` to normalize varied separators (`—`, `–`, ` - `, `:`) into `/`, merge separate `subgroup`/`department` keys if emitted by the model, and automatically strip trailing parenthesized titles while backfilling them into empty `occupation`/role blocks to prevent data loss.
-- **Verification:** 37/37 unit tests passing via `node --test`.
+## Sixth Feature Update — 1.2.0 (2026-10-22)
+- **Multi-Device Server-Synced Storage:** Implemented dual-layer persistence in `src/db/sqlite-store.js` combining `localforage` (ultra-fast client-side IndexedDB caching) with SillyTavern's server-synchronized user settings (`context.extensionSettings['npc_tracker'].server_db` and `context.saveSettingsDebounced()`).
+- **Zero Server Plugin Rule Compliance:** Achieved 100% native multi-device sync without requiring any Node.js backend routes, extra plugins, or server process restarts.
+- **Smart Hydration & Conflict Resolution:** Implemented `mergeNpcCollections()` to seamlessly hydrate newly connected devices (e.g. mobile phones connecting for the first time) from the server, while resolving any simultaneous cross-device updates using timestamp comparisons (`updated_at`) without dropping records.
+- **Drawer Setting Toggle:** Added `Sync Database to Server (Multi-Device)` checkbox (`#st_npc_server_sync`) under Database Management in `src/ui/settings.html` and bound in `index.js`.
+- **Verification:** 40/40 unit and integration tests passing via `node --test`.
 
 
 

@@ -20,6 +20,7 @@ import {
     resolveScopeTarget,
     exportDatabaseToJson,
     importDatabaseFromJson,
+    saveDatabaseNow,
 } from './src/db/sqlite-store.js';
 
 import {
@@ -67,6 +68,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     customTemplates: [],
     settingAwareFilter: false,
     matchDepth: 4,
+    serverSync: true,
     scanner: {
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
@@ -913,6 +915,17 @@ async function renderSettingsDrawer(settings) {
                 }
             } finally {
                 input.value = '';
+            }
+        });
+
+        // Bind Server Sync (Multi-Device) toggle
+        const serverSyncCheckbox = $('#st_npc_server_sync');
+        serverSyncCheckbox.prop('checked', settings.serverSync !== false);
+        serverSyncCheckbox.off('change').on('change', () => {
+            settings.serverSync = serverSyncCheckbox.prop('checked');
+            context.saveSettingsDebounced();
+            if (settings.serverSync) {
+                saveDatabaseNow();
             }
         });
 
