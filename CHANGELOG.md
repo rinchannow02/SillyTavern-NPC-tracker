@@ -9,6 +9,19 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.1.4] - 2026-10-22
+
+### Added
+- **Hierarchical Group Formatting & Title Leakage Prevention:**
+  - Updated all extraction prompts (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`, and `DEFAULT_EXTRACTION_PROMPT`) with explicit instructions to format organizational sub-units as `"Parent / Subgroup"` (e.g. `"Hikari Co. / Accounting"`, `"Hikari Co. / IT"`), keeping parent group names consistent so related NPCs cleanly collapse into a singular group folder.
+  - Added strict negative constraints preventing LLMs from putting job titles, ranks, or positions into group names, reinforcing that titles belong exclusively in the character sheet blocks (`occupation`, `role_class`, `faction_role`).
+- **Defensive Group Normalization & Title Salvage Engine:**
+  - Implemented `cleanAndNormalizeGroupName()` in `src/scanner/chat-scanner.js` to automatically convert em-dashes (`—`), en-dashes (`–`), spaced hyphens (` - `), and colons (`:`) into the standard `/` hierarchy separator.
+  - Automatically strips trailing parenthesized roles/titles (e.g. `(Section Chief)`) from group names and backfills them into the character's empty `occupation` or role block so no context is lost.
+  - Added seamless merging for separate `subgroup`, `sub_group`, `department`, or `division` keys emitted by LLM models.
+
+---
+
 ## [1.1.3] - 2026-10-22
 
 ### Added

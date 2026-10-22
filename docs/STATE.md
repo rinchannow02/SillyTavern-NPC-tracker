@@ -1,7 +1,7 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.1.3`
+- **Current Version:** `1.1.4`
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
 - **Versioning Policy:** `1.x.x` (Major), `x.1.x` (Feature updates), `x.x.1` (Minor / hotfix / security)
 - **Base Integration Branch:** `staging`
@@ -97,6 +97,12 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 - **Template Separation & Schema Enhancements:** Deconstructed monolithic template definitions in `src/templates/preset-manager.js` into standalone, easily editable JSON preset files under `src/templates/presets/` (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`). Added `appearance` blocks across all presets (fixing blindspots in Slice of Life and Cyberpunk) and expanded `relationship` blocks into pairwise connection maps covering inter-NPC social dynamics in addition to user ties.
 - **Scanner Salvage Engine & Fuzzy Matching:** Implemented two-tier salvage in `src/scanner/chat-scanner.js`: (1) Normalized alphanumeric key matching to support casing/separator variations (e.g. `speechStyle` -> `speech_style`), and (2) Dynamic Custom Block Salvage to automatically convert any novel attributes returned by the LLM into safe custom blocks (`custom_<key>`), ensuring zero data loss.
 - **Verification:** 36/36 unit tests passing via `node --test`.
+
+## Fifth Feature Update — 1.1.4 (2026-10-22)
+- **Hierarchical Group Formatting in Presets:** Updated extraction prompts across all built-in presets (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`) and `DEFAULT_EXTRACTION_PROMPT` with explicit `"Parent / Subgroup"` syntax rules (e.g. `"Hikari Co. / Accounting"`, `"Hikari Co. / IT"`). Emphasized consistent parent organization names so NPCs belonging to the same entity collapse into a unified parent folder instead of fragmenting into separate top-level folders.
+- **Title Leakage Prevention:** Enforced strict negative rules barring LLMs from injecting job titles, ranks, or positions (e.g. `(Section Chief)`, `Captain`, `Lead`) into `group_name`. Reinforced that organizational roles belong strictly in the character sheet's `occupation`, `role_class`, or `faction_role` block.
+- **Defensive Group Normalization & Delimiter Conversion:** Implemented `cleanAndNormalizeGroupName()` in `src/scanner/chat-scanner.js` to normalize varied separators (`—`, `–`, ` - `, `:`) into `/`, merge separate `subgroup`/`department` keys if emitted by the model, and automatically strip trailing parenthesized titles while backfilling them into empty `occupation`/role blocks to prevent data loss.
+- **Verification:** 37/37 unit tests passing via `node --test`.
 
 
 

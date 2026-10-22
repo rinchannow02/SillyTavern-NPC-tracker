@@ -23,7 +23,7 @@ Only account for NPCs that regularly appear or actively interact in the story (i
 For each NPC found, output a JSON array of objects with the following keys:
 - "name": string (Full or recognized name of the NPC)
 - "aliases": string (Comma-separated nicknames, titles, or aliases, e.g. "Barkeep, Chief", or empty string)
-- "group_name": string (Faction, department, or establishment, e.g. "Mirai Industries IT", or empty string)
+- "group_name": string (Main organization, company, faction, or establishment. If the character belongs to an internal department or sub-unit, format with forward slash as "Parent / Subgroup", e.g. "Hikari Co. / Accounting" or "Hikari Co. / IT". Strict rules: keep parent group consistent across characters; use "/" for sub-groups, never dashes ("—", "-"); and NEVER put personal job titles or ranks in group_name.)
 - "location_keywords": string (Comma-separated setting keywords where this NPC appears, e.g. "basement, office", or empty string)
 - "appearance": string (ONLY physical traits and attire, concise list/tags: e.g. "woman, tall, heels, dark suit, flat expression")
 - "personality": string (Concise behavioral tags or simple description for roleplay execution: e.g. "deadpan, authoritative, dry humor, monotone, protective")
@@ -37,7 +37,7 @@ Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without pr
   {
     "name": "NPC Name",
     "aliases": "Alias",
-    "group_name": "Group",
+    "group_name": "Hikari Co. / Accounting",
     "location_keywords": "location",
     "appearance": "man, tall, black hair, lab coat",
     "personality": "cynical, brilliant, speaks fast, impatient",
@@ -225,7 +225,24 @@ export async function scanRecentChat(options = {}) {
             });
 
             // Mark standard metadata keys as used
-            const KNOWN_METADATA_KEYS = ['name', 'aliases', 'group_name', 'location_keywords', 'relationship'];
+            const KNOWN_METADATA_KEYS = [
+                'name',
+                'aliases',
+                'alias',
+                'group_name',
+                'group',
+                'subgroup',
+                'sub_group',
+                'department',
+                'division',
+                'faction',
+                'location_keywords',
+                'location',
+                'setting',
+                'relationship',
+                'relationships',
+                'standing',
+            ];
             for (const k of itemKeys) {
                 const kNorm = normalizeKey(k);
                 if (KNOWN_METADATA_KEYS.some((mk) => normalizeKey(mk) === kNorm)) {
@@ -234,7 +251,8 @@ export async function scanRecentChat(options = {}) {
             }
 
             const safeAliases = getSafePrimitiveString(item, 'aliases') || getSafePrimitiveString(item, 'alias');
-            const safeGroupName = getSafePrimitiveString(item, 'group_name') || getSafePrimitiveString(item, 'group') || getSafePrimitiveString(item, 'faction');
+            const rawGroupName = getSafePrimitiveString(item, 'group_name') || getSafePrimitiveString(item, 'group') || getSafePrimitiveString(item, 'faction');
+            const safeGroupName = cleanAndNormalizeGroupName(rawGroupName, item, blocks);
             const safeLocation = getSafePrimitiveString(item, 'location_keywords') || getSafePrimitiveString(item, 'location') || getSafePrimitiveString(item, 'setting');
             const safeRelationship = getSafePrimitiveString(item, 'relationship') || getSafePrimitiveString(item, 'relationships') || getSafePrimitiveString(item, 'standing');
 
@@ -458,6 +476,65 @@ export function formatKeyToLabel(key) {
         .filter(Boolean)
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
         .join(' ') || 'Detail';
+}
+
+/**
+ * Normalizes group and sub-group formatting, collapses unnecessary hierarchy fragmentation,
+ * converts separators ("—", "–", " - ", ": ") to "/", and rescues trailing parenthetical roles/titles
+ * (e.g. "(Section Chief)") into character blocks if empty.
+ *
+ * @param {string} rawGroup
+ * @param {Object} [item={}]
+ * @param {Array<{id: string, label: string, value: string}>} [blocks=[]]
+ * @returns {string} Cleaned and normalized group_name
+ */
+export function cleanAndNormalizeGroupName(rawGroup = '', item = {}, blocks = []) {
+    let group = typeof rawGroup === 'string' ? rawGroup.trim() : '';
+
+    // Merge separate subgroup/department fields emitted by LLM if not already in group
+    const subGroup = getSafePrimitiveString(item, 'subgroup')
+        || getSafePrimitiveString(item, 'sub_group')
+        || getSafePrimitiveString(item, 'department')
+        || getSafePrimitiveString(item, 'division');
+
+    if (group && subGroup && !group.toLowerCase().includes(subGroup.toLowerCase())) {
+        group = `${group} / ${subGroup}`;
+    } else if (!group && subGroup) {
+        group = subGroup;
+    }
+
+    if (!group) return '';
+
+    // Extract trailing parenthetical role/title: e.g. "Hikari Co. / Accounting (Section Chief)"
+    let rescuedTitle = '';
+    const titleMatch = group.match(/\s*\(([^)]+)\)\s*$/);
+    if (titleMatch) {
+        rescuedTitle = titleMatch[1].trim();
+        group = group.replace(/\s*\([^)]+\)\s*$/, '').trim();
+    }
+
+    // Convert em-dash (—), en-dash (–), spaced hyphen (" - "), or colon (" : ") used as hierarchy separators into "/"
+    group = group
+        .replace(/\s*[—–]\s*/g, ' / ')
+        .replace(/\s+-\s+/g, ' / ')
+        .replace(/\s*:\s+/g, ' / ');
+
+    // Normalize slashes: collapse multiple consecutive slashes or stray whitespace
+    const parts = group.split('/').map((p) => p.trim()).filter(Boolean);
+    group = parts.join(' / ');
+
+    // If we extracted a role/title from parentheses, backfill it into occupation/role blocks if empty
+    if (rescuedTitle && Array.isArray(blocks)) {
+        const roleBlock = blocks.find((b) =>
+            ['occupation', 'role_class', 'faction_role', 'role'].includes(b.id) ||
+            ['occupation', 'role', 'job', 'class', 'title'].some((kw) => normalizeKey(b.label || '').includes(kw))
+        );
+        if (roleBlock && !roleBlock.value) {
+            roleBlock.value = rescuedTitle;
+        }
+    }
+
+    return group;
 }
 
 /**
