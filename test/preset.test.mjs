@@ -88,10 +88,11 @@ test('validatePreset - rejects invalid payloads', () => {
     assert.throws(() => validatePreset({ name: 'Bad', blocks: ['not an object'] }), /Invalid block at index 0/);
 });
 
-test('preset schemas - all built-ins include speech_style and bio, slice_of_life excludes routine', () => {
+test('preset schemas - all built-ins include appearance, relationship, speech_style and bio', () => {
     const sol = getPresetById('slice_of_life');
     const solBlockIds = sol.blocks.map((b) => b.id);
     assert.ok(solBlockIds.includes('occupation'));
+    assert.ok(solBlockIds.includes('appearance'));
     assert.ok(solBlockIds.includes('personality'));
     assert.ok(solBlockIds.includes('speech_style'));
     assert.ok(solBlockIds.includes('quirks'));
@@ -101,10 +102,16 @@ test('preset schemas - all built-ins include speech_style and bio, slice_of_life
 
     for (const preset of BUILTIN_PRESETS) {
         const ids = preset.blocks.map((b) => b.id);
+        assert.ok(ids.includes('appearance'), `${preset.id} missing appearance`);
+        assert.ok(ids.includes('relationship'), `${preset.id} missing relationship`);
         assert.ok(ids.includes('speech_style'), `${preset.id} missing speech_style`);
         assert.ok(ids.includes('bio'), `${preset.id} missing bio`);
+        assert.ok(preset.template.includes('{{appearance}}'), `${preset.id} template missing appearance token`);
+        assert.ok(preset.template.includes('{{relationship}}'), `${preset.id} template missing relationship token`);
         assert.ok(preset.template.includes('{{speech_style}}'), `${preset.id} template missing speech_style token`);
         assert.ok(preset.template.includes('{{bio}}'), `${preset.id} template missing bio token`);
+        assert.ok(preset.extractionPrompt.includes('appearance'), `${preset.id} prompt missing appearance key`);
+        assert.ok(preset.extractionPrompt.includes('relationship'), `${preset.id} prompt missing relationship key`);
         assert.ok(preset.extractionPrompt.includes('speech_style'), `${preset.id} prompt missing speech_style key`);
         assert.ok(preset.extractionPrompt.includes('bio'), `${preset.id} prompt missing bio key`);
     }
@@ -124,3 +131,40 @@ test('validatePreset - sanitizes dangerous prototype block IDs (C3)', () => {
     assert.equal(validated.blocks[1].id, 'block___proto__');
     assert.equal(validated.blocks[2].id, 'normal');
 });
+
+test('individual preset JSON files - exist in presets directory and match valid schemas', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    const presetFiles = ['classic.json', 'slice_of_life.json', 'adventure_fantasy.json', 'rpg_scifi.json'];
+    for (const filename of presetFiles) {
+        const filePath = path.resolve('src/templates/presets', filename);
+        assert.ok(fs.existsSync(filePath), `Preset file ${filename} must exist`);
+
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        const validated = validatePreset(parsed);
+
+        assert.ok(validated.id);
+        assert.ok(validated.name);
+        assert.ok(Array.isArray(validated.blocks) && validated.blocks.length >= 3);
+        assert.ok(validated.template);
+        assert.ok(validated.extractionPrompt);
+    }
+});
+
+test('chat-scanner salvage engine - formatKeyToLabel and normalizeKey handle snake_case and camelCase keys', async () => {
+    const { formatKeyToLabel, normalizeKey } = await import('../src/scanner/chat-scanner.js');
+
+    assert.equal(formatKeyToLabel('quest_hooks'), 'Quest Hooks');
+    assert.equal(formatKeyToLabel('combatStyle'), 'Combat Style');
+    assert.equal(formatKeyToLabel('custom_secret_weapon'), 'Secret Weapon');
+    assert.equal(formatKeyToLabel('weapons'), 'Weapons');
+    assert.equal(formatKeyToLabel(''), 'Detail');
+
+    assert.equal(normalizeKey('Speech_Style'), 'speechstyle');
+    assert.equal(normalizeKey('Tone & Speaking Style'), 'tonespeakingstyle');
+    assert.equal(normalizeKey('relationship_summary'), 'relationshipsummary');
+});
+
+

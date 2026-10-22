@@ -187,16 +187,80 @@ export async function scanRecentChat(options = {}) {
             const cleanName = item.name.trim();
             const existing = findExistingNpc(cleanName, item.aliases, context, activeNpcs);
 
+            const usedKeys = new Set();
             const defaultBlocks = generateBlocksFromPreset(activePreset);
-            const blocks = defaultBlocks.map((b) => ({
-                ...b,
-                value: getSafePrimitiveString(item, b.id) || getSafePrimitiveString(item, b.label),
-            }));
+            const itemKeys = Object.keys(item);
 
-            const safeAliases = getSafePrimitiveString(item, 'aliases');
-            const safeGroupName = getSafePrimitiveString(item, 'group_name');
-            const safeLocation = getSafePrimitiveString(item, 'location_keywords');
-            const safeRelationship = getSafePrimitiveString(item, 'relationship');
+            // 1. Extract values for defined preset blocks using exact then fuzzy matching
+            const blocks = defaultBlocks.map((b) => {
+                let val = getSafePrimitiveString(item, b.id);
+                if (val) {
+                    usedKeys.add(b.id);
+                } else {
+                    val = getSafePrimitiveString(item, b.label);
+                    if (val) usedKeys.add(b.label);
+                }
+
+                // Fuzzy match fallback across item keys
+                if (!val) {
+                    const targetNormId = normalizeKey(b.id);
+                    const targetNormLabel = normalizeKey(b.label);
+                    for (const k of itemKeys) {
+                        if (usedKeys.has(k)) continue;
+                        const kNorm = normalizeKey(k);
+                        if (kNorm === targetNormId || kNorm === targetNormLabel) {
+                            val = getSafePrimitiveString(item, k);
+                            if (val) {
+                                usedKeys.add(k);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                return {
+                    ...b,
+                    value: val || '',
+                };
+            });
+
+            // Mark standard metadata keys as used
+            const KNOWN_METADATA_KEYS = ['name', 'aliases', 'group_name', 'location_keywords', 'relationship'];
+            for (const k of itemKeys) {
+                const kNorm = normalizeKey(k);
+                if (KNOWN_METADATA_KEYS.some((mk) => normalizeKey(mk) === kNorm)) {
+                    usedKeys.add(k);
+                }
+            }
+
+            const safeAliases = getSafePrimitiveString(item, 'aliases') || getSafePrimitiveString(item, 'alias');
+            const safeGroupName = getSafePrimitiveString(item, 'group_name') || getSafePrimitiveString(item, 'group') || getSafePrimitiveString(item, 'faction');
+            const safeLocation = getSafePrimitiveString(item, 'location_keywords') || getSafePrimitiveString(item, 'location') || getSafePrimitiveString(item, 'setting');
+            const safeRelationship = getSafePrimitiveString(item, 'relationship') || getSafePrimitiveString(item, 'relationships') || getSafePrimitiveString(item, 'standing');
+
+            // 2. Failsafe Salvage Engine: convert any remaining non-empty keys into dynamic custom blocks
+            for (const k of itemKeys) {
+                if (usedKeys.has(k)) continue;
+                const rawVal = getSafePrimitiveString(item, k);
+                if (!rawVal) continue;
+
+                let safeId = k.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                if (DANGEROUS_KEYS.has(safeId)) {
+                    safeId = `safe_${safeId}`;
+                }
+                const blockId = `custom_${safeId}`;
+                const blockLabel = formatKeyToLabel(k);
+
+                // Only add if not already in blocks
+                if (!blocks.some((b) => b.id === blockId || normalizeKey(b.label) === normalizeKey(blockLabel))) {
+                    blocks.push({
+                        id: blockId,
+                        label: blockLabel,
+                        type: 'text',
+                        value: rawVal,
+                    });
+                }
+            }
 
             if (existing) {
                 if (updateMode === 'create_new_only') {
@@ -206,7 +270,7 @@ export async function scanRecentChat(options = {}) {
                 // Merge details: only fill fields that are empty; never overwrite non-empty user data
                 const mergedBlocks = Array.isArray(existing.blocks) ? [...existing.blocks] : [];
                 for (const b of blocks) {
-                    const targetIdx = mergedBlocks.findIndex((mb) => mb.id === b.id);
+                    const targetIdx = mergedBlocks.findIndex((mb) => mb.id === b.id || normalizeKey(mb.label) === normalizeKey(b.label));
                     if (targetIdx !== -1) {
                         if (!mergedBlocks[targetIdx].value && b.value) {
                             mergedBlocks[targetIdx].value = b.value;
@@ -367,6 +431,33 @@ export function parseExtractionResponse(rawText) {
     }
 
     return [];
+}
+
+const DANGEROUS_KEYS = new Set(['constructor', '__proto__', 'prototype', 'tostring', 'valueof', 'isprototypeof']);
+
+/**
+ * Normalizes a key string to lowercase alphanumeric characters.
+ * @param {string} str
+ * @returns {string}
+ */
+export function normalizeKey(str) {
+    return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Formats a key name like "quest_hooks" or "combatStyle" into a human-readable title like "Quest Hooks".
+ * @param {string} key
+ * @returns {string}
+ */
+export function formatKeyToLabel(key) {
+    return String(key || '')
+        .replace(/^custom_/, '')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ') || 'Detail';
 }
 
 /**

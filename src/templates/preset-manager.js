@@ -3,135 +3,28 @@
  * @description Preset manager for customizable NPC database templates, export/import, and built-in genre schemas.
  */
 
+import classicPreset from './presets/classic.json' with { type: 'json' };
+import sliceOfLifePreset from './presets/slice_of_life.json' with { type: 'json' };
+import adventureFantasyPreset from './presets/adventure_fantasy.json' with { type: 'json' };
+import rpgScifiPreset from './presets/rpg_scifi.json' with { type: 'json' };
+
+/**
+ * Deep freezes a preset object and its inner blocks for immutability.
+ * @param {Object} p
+ * @returns {Object}
+ */
+function freezePreset(p) {
+    return Object.freeze({
+        ...p,
+        blocks: Object.freeze((p.blocks || []).map((b) => Object.freeze({ ...b }))),
+    });
+}
+
 export const BUILTIN_PRESETS = Object.freeze([
-    Object.freeze({
-        id: 'classic',
-        name: 'Classic (Standard)',
-        description: 'Standard character tracking for general roleplay (Appearance, Personality, Speaking Style, Relationship, Bio).',
-        isBuiltin: true,
-        blocks: Object.freeze([
-            Object.freeze({ id: 'appearance', label: 'Appearance', type: 'text', value: '' }),
-            Object.freeze({ id: 'personality', label: 'Personality', type: 'text', value: '' }),
-            Object.freeze({ id: 'speech_style', label: 'Tone & Speaking Style', type: 'text', value: '' }),
-            Object.freeze({ id: 'relationship', label: 'Relationship', type: 'text', value: '' }),
-            Object.freeze({ id: 'bio', label: 'Short Bio & Background', type: 'text', value: '' }),
-        ]),
-        template: '### NPC: {{name}} [{{group}}]\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}\n- **Speaking Style:** {{speech_style}}\n- **Relationship:** {{relationship}}\n- **Bio:** {{bio}}',
-        extractionPrompt: `Extract newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.
-Do NOT extract the main user persona or the primary character.
-Only account for NPCs that regularly appear or actively interact in the story.
-
-For each NPC found, output a JSON array of objects with the following keys:
-- "name": string (Full or recognized name of the NPC)
-- "aliases": string (Comma-separated nicknames, titles, or aliases, or empty string)
-- "group_name": string (Faction, department, or establishment, or empty string)
-- "location_keywords": string (Comma-separated setting keywords where this NPC appears, or empty string)
-- "appearance": string (Concise physical traits and attire)
-- "personality": string (Concise behavioral tags or demeanor)
-- "speech_style": string (Tone of voice, speech patterns, verbal mannerisms, or accent for the LLM to roleplay)
-- "relationship": string (Pairwise relationship notes, e.g. "Friend, Guard Captain")
-- "bio": string (Short background, backstory, or notable context up to ~200 words)
-
-Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation.`,
-    }),
-    Object.freeze({
-        id: 'slice_of_life',
-        name: 'Slice of Life',
-        description: 'Tailored for contemporary, school, workplace, and slice-of-life roleplay.',
-        isBuiltin: true,
-        blocks: Object.freeze([
-            Object.freeze({ id: 'occupation', label: 'Occupation / Role', type: 'text', value: '' }),
-            Object.freeze({ id: 'personality', label: 'Personality & Demeanor', type: 'text', value: '' }),
-            Object.freeze({ id: 'speech_style', label: 'Tone & Speaking Style', type: 'text', value: '' }),
-            Object.freeze({ id: 'quirks', label: 'Habits & Quirks', type: 'text', value: '' }),
-            Object.freeze({ id: 'relationship', label: 'Relationship to You', type: 'text', value: '' }),
-            Object.freeze({ id: 'bio', label: 'Short Bio & Background', type: 'text', value: '' }),
-        ]),
-        template: '### NPC: {{name}} ({{aliases}}) [{{group}}]\n- **Occupation:** {{occupation}}\n- **Personality:** {{personality}}\n- **Speaking Style:** {{speech_style}}\n- **Habits & Quirks:** {{quirks}}\n- **Relationship:** {{relationship}}\n- **Bio:** {{bio}}',
-        extractionPrompt: `Extract newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.
-Do NOT extract the main user persona or the primary character.
-Focus on characters that live and interact in the everyday world.
-
-For each NPC found, output a JSON array of objects with the following keys:
-- "name": string (Full name of the NPC)
-- "aliases": string (Nicknames, titles, or pet names)
-- "group_name": string (School, workplace, club, or social circle)
-- "location_keywords": string (Common hangouts, e.g. "cafe, classroom, park")
-- "occupation": string (Job, school grade, or social role)
-- "personality": string (Demeanor, attitude, and social style)
-- "speech_style": string (Tone of voice, speech patterns, slang, or verbal mannerisms for the LLM to roleplay)
-- "quirks": string (Notable habits, mannerisms, or speech idiosyncrasies)
-- "relationship": string (Connection to player or primary characters)
-- "bio": string (Short backstory, daily life background, or history up to ~200 words)
-
-Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation.`,
-    }),
-    Object.freeze({
-        id: 'adventure_fantasy',
-        name: 'Adventure & Fantasy',
-        description: 'Designed for high fantasy, adventuring parties, tavern questing, and guild campaigns.',
-        isBuiltin: true,
-        blocks: Object.freeze([
-            Object.freeze({ id: 'role_class', label: 'Race & Class', type: 'text', value: '' }),
-            Object.freeze({ id: 'appearance', label: 'Appearance & Armor', type: 'text', value: '' }),
-            Object.freeze({ id: 'personality', label: 'Demeanor & Alignment', type: 'text', value: '' }),
-            Object.freeze({ id: 'speech_style', label: 'Speaking Style & Dialect', type: 'text', value: '' }),
-            Object.freeze({ id: 'equipment', label: 'Weapons & Gear', type: 'text', value: '' }),
-            Object.freeze({ id: 'quest_hooks', label: 'Quest Hooks & Motives', type: 'text', value: '' }),
-            Object.freeze({ id: 'bio', label: 'Short Bio & Lore', type: 'text', value: '' }),
-        ]),
-        template: '### NPC: {{name}} [{{group}}]\n- **Race & Class:** {{role_class}}\n- **Appearance & Armor:** {{appearance}}\n- **Demeanor:** {{personality}}\n- **Speaking Style:** {{speech_style}}\n- **Weapons & Gear:** {{equipment}}\n- **Quest Hooks:** {{quest_hooks}}\n- **Bio:** {{bio}}',
-        extractionPrompt: `Extract newly introduced or updated secondary/tertiary NPCs from the recent fantasy roleplay messages.
-Do NOT extract the main user persona or the primary character.
-
-For each NPC found, output a JSON array of objects with the following keys:
-- "name": string (Full name or adventurer title)
-- "aliases": string (Aliases, monikers, e.g. "The Silver Fox")
-- "group_name": string (Guild, covenant, mercenary band, or village)
-- "location_keywords": string (Tavern, dungeon floor, forest grove, fortress)
-- "role_class": string (Race and adventurer class/profession, e.g. "Elf Ranger", "Dwarf Blacksmith")
-- "appearance": string (Armor, physical build, distinguishing scars or features)
-- "personality": string (Demeanor, moral alignment, and temperament)
-- "speech_style": string (Accent, archaic dialect, cadence, or manner of speech)
-- "equipment": string (Signature weapons, enchanted artifacts, or gear)
-- "quest_hooks": string (Secrets, bounties, requests, or motivations)
-- "bio": string (Short origin, backstory, or notable deeds up to ~200 words)
-
-Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation.`,
-    }),
-    Object.freeze({
-        id: 'rpg_scifi',
-        name: 'RPG & Cyberpunk',
-        description: 'Structured for gritty sci-fi, cyberpunk, corporations, and faction-based RPGs.',
-        isBuiltin: true,
-        blocks: Object.freeze([
-            Object.freeze({ id: 'faction_role', label: 'Faction & Role', type: 'text', value: '' }),
-            Object.freeze({ id: 'cyberware_gear', label: 'Cyberware & Tech', type: 'text', value: '' }),
-            Object.freeze({ id: 'personality', label: 'Attitude & Motive', type: 'text', value: '' }),
-            Object.freeze({ id: 'speech_style', label: 'Street Slang & Demeanor', type: 'text', value: '' }),
-            Object.freeze({ id: 'threat_bounty', label: 'Threat Level & Bounty', type: 'text', value: '' }),
-            Object.freeze({ id: 'relationship', label: 'Street Standing', type: 'text', value: '' }),
-            Object.freeze({ id: 'bio', label: 'Short Bio & Dossier', type: 'text', value: '' }),
-        ]),
-        template: '### NPC: {{name}} [{{group}}]\n- **Faction & Role:** {{faction_role}}\n- **Cyberware & Gear:** {{cyberware_gear}}\n- **Attitude:** {{personality}}\n- **Speech Style:** {{speech_style}}\n- **Threat Level:** {{threat_bounty}}\n- **Standing:** {{relationship}}\n- **Bio:** {{bio}}',
-        extractionPrompt: `Extract newly introduced or updated secondary/tertiary NPCs from the recent sci-fi/cyberpunk roleplay messages.
-Do NOT extract the main user persona or the primary character.
-
-For each NPC found, output a JSON array of objects with the following keys:
-- "name": string (Street handle or full name)
-- "aliases": string (Callsigns, street tags, or corporate titles)
-- "group_name": string (Megacorp, street gang, fixers, or syndicate)
-- "location_keywords": string (District, safehouse, dive bar, cyberspace)
-- "faction_role": string (Specialty, e.g. "Netrunner, Fixer, Corp Security Exec")
-- "cyberware_gear": string (Visible cybernetics, high-tech weapon loadout)
-- "personality": string (Street attitude, vices, and hidden motives)
-- "speech_style": string (Street slang, corporate jargon, or verbal cadence for roleplay)
-- "threat_bounty": string (Combat danger rating, active bounties, or law enforcement status)
-- "relationship": string (Affiliation or street cred with the player)
-- "bio": string (Brief dossier history, criminal record, or origin up to ~200 words)
-
-Output ONLY the valid JSON array inside a \`\`\`json\`\`\` code block without preamble or explanation.`,
-    }),
+    freezePreset(classicPreset),
+    freezePreset(sliceOfLifePreset),
+    freezePreset(adventureFantasyPreset),
+    freezePreset(rpgScifiPreset),
 ]);
 
 /**
