@@ -552,3 +552,160 @@ test('initDatabase - hydrates from extensionSettings.server_db when local storag
     assert.ok(seededItem.some((n) => n.id === serverNpc.id), 'seeded localforage must contain server NPC');
 });
 
+test('tombstones - deleted NPCs do not resurrect on multi-device merge (H1)', async () => {
+    const { mergeNpcCollections } = await import('../src/db/sqlite-store.js');
+
+    const a = { id: 'npc-a', name: 'Alice', created_at: 10, updated_at: 10, links: [] };
+    const b = { id: 'npc-b', name: 'Bob', created_at: 20, updated_at: 20, links: [] };
+
+    // Device A deleted Bob at timestamp 25
+    const tombstones = { 'npc-b': 25 };
+
+    // Device B still has Bob in local cache with updated_at: 20
+    const local = [a, b];
+    const server = [a];
+
+    const merged = mergeNpcCollections(local, server, {}, tombstones);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].id, 'npc-a');
+    assert.ok(!merged.some((n) => n.id === 'npc-b'), 'Deleted NPC Bob must not resurrect');
+});
+
+test('scope link mutators bump updated_at and survive sync merge (H2)', async () => {
+    const {
+        createNpc,
+        getNpcById,
+        linkNpcScope,
+        unlinkNpcScope,
+        setNpcScopeStatus,
+        mergeNpcCollections,
+    } = await import('../src/db/sqlite-store.js');
+
+    const id = createNpc({ name: 'Charlie' });
+    const original = getNpcById(id);
+    const t0 = original.updated_at;
+
+    // Small delay to ensure timestamp advancement
+    await new Promise((r) => setTimeout(r, 5));
+
+    linkNpcScope(id, 'chat', 'chat-1', 'Colleague', 1);
+    const afterLink = getNpcById(id);
+    assert.ok(afterLink.updated_at > t0, 'linkNpcScope must bump updated_at');
+
+    const t1 = afterLink.updated_at;
+    await new Promise((r) => setTimeout(r, 5));
+
+    setNpcScopeStatus(id, 'chat', 'chat-1', 0);
+    const afterStatus = getNpcById(id);
+    assert.ok(afterStatus.updated_at > t1, 'setNpcScopeStatus must bump updated_at');
+
+    const t2 = afterStatus.updated_at;
+    await new Promise((r) => setTimeout(r, 5));
+
+    unlinkNpcScope(id, 'chat', 'chat-1');
+    const afterUnlink = getNpcById(id);
+    assert.ok(afterUnlink.updated_at > t2, 'unlinkNpcScope must bump updated_at');
+
+    // Merge tie-breaker: server must not clobber local when timestamps are equal
+    const localCopy = { id: 'test-tie', created_at: 100, updated_at: 100, links: [{ scope_type: 'chat', target_id: 'x', is_active: 0 }] };
+    const serverCopy = { id: 'test-tie', created_at: 100, updated_at: 100, links: [{ scope_type: 'chat', target_id: 'x', is_active: 1 }] };
+    const merged = mergeNpcCollections([localCopy], [serverCopy]);
+    assert.equal(merged[0].links[0].is_active, 0, 'Local link state must be preserved on timestamp tie');
+});
+
+test('chat-scanner - fuzzy metadata extraction and bounded salvage engine (L1, L2)', async () => {
+    const { scanRecentChat } = await import('../src/scanner/chat-scanner.js');
+
+    const longText = 'A'.repeat(700);
+    const fakeExtraction = JSON.stringify([
+        {
+            name: 'Fuzzy Key NPC',
+            groupName: 'Hikari Co. / Research',
+            Location: 'Lab 4',
+            standing: 'Friendly',
+            custom_secret: 'Known',
+            extra_field_1: 'Val 1',
+            extra_field_2: 'Val 2',
+            extra_field_3: 'Val 3',
+            extra_field_4: 'Val 4',
+            extra_field_5: 'Val 5',
+            extra_field_6: 'Val 6 (must be dropped by cap)',
+            very_long_field: longText,
+        },
+    ]);
+
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            chat: [{ is_user: true, mes: 'Hello researcher in Lab 4.' }],
+            generateRaw: async () => fakeExtraction,
+            characters: {},
+            characterId: null,
+            chatId: 'test-chat-fuzzy',
+            extensionSettings: {
+                npc_tracker: {
+                    enabled: true,
+                    scanner: { enabled: true, updateMode: 'create_new_only' },
+                },
+            },
+        }),
+        libs: {},
+    };
+
+    const res = await scanRecentChat(1);
+    assert.ok(res.created >= 1);
+    const { getNpcById } = await import('../src/db/sqlite-store.js');
+    const npc = (await import('../src/db/sqlite-store.js')).getActiveContextNpcs().find((n) => n.name === 'Fuzzy Key NPC');
+    assert.ok(npc, 'Fuzzy Key NPC must be created');
+    assert.equal(npc.group_name, 'Hikari Co. / Research', 'groupName must map to group_name (L1)');
+    assert.equal(npc.location_keywords, 'Lab 4', 'Location must map to location_keywords (L1)');
+
+    // Bounded salvage checks (L2)
+    const customBlocks = npc.blocks.filter((b) => b.id.startsWith('custom_'));
+    assert.ok(customBlocks.length <= 5, `Custom salvaged blocks must not exceed 5 (got ${customBlocks.length})`);
+    for (const b of customBlocks) {
+        assert.ok(b.value.length <= 500, 'Salvaged block text must be capped at 500 characters');
+    }
+});
+
+test('cleanAndNormalizeGroupName - preserves location branch in parentheses (L3)', async () => {
+    const { cleanAndNormalizeGroupName } = await import('../src/scanner/chat-scanner.js');
+
+    const blocks = [{ id: 'occupation', label: 'Occupation', value: '' }];
+    const res = cleanAndNormalizeGroupName('Hikari Co. (Tokyo Branch)', {}, blocks);
+    assert.equal(res, 'Hikari Co. / Tokyo Branch');
+    assert.equal(blocks[0].value, '', 'Location branch must not leak into occupation');
+});
+
+test('initExtensionSettings - migrates legacy scanner.settingAwareFilter and scanDepth (M3)', async () => {
+    const { initExtensionSettings } = await import('../index.js');
+
+    const legacySettings = {
+        scanner: {
+            enabled: true,
+            settingAwareFilter: true,
+            scanDepth: 12,
+        },
+    };
+
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            extensionSettings: {
+                npc_tracker: legacySettings,
+            },
+            saveSettingsDebounced: () => {},
+        }),
+        libs: {
+            lodash: {
+                merge: (target, source) => Object.assign(target, source),
+                cloneDeep: (obj) => JSON.parse(JSON.stringify(obj)),
+            },
+        },
+    };
+
+    const migrated = initExtensionSettings();
+    assert.equal(migrated.settingAwareFilter, true, 'Top-level settingAwareFilter must receive legacy value');
+    assert.equal(migrated.matchDepth, 12, 'Top-level matchDepth must receive legacy scanDepth');
+    assert.equal(migrated.scanner.settingAwareFilter, undefined, 'Legacy scanner.settingAwareFilter must be removed');
+    assert.equal(migrated.scanner.matchDepth, undefined, 'Legacy scanner.matchDepth must be removed');
+});
+

@@ -15,8 +15,10 @@ export const DEFAULT_BLOCKS = Object.freeze([
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_SCOPES = new Set(['chat', 'character', 'persona', 'global']);
+const TOMBSTONES_KEY = 'st_npc_tracker_tombstones';
 
 let npcs = [];
+let tombstones = {};
 let saveTimer = null;
 let loadFailed = false;
 // ST's personas.js module, loaded in initDatabase. getContext() does not expose the active persona.
@@ -27,6 +29,34 @@ function getLocalforage() {
 }
 
 const copyBlocks = (blocks) => blocks.map((b) => ({ ...b }));
+
+/**
+ * Prunes tombstone entries older than 30 days and bounds dictionary size.
+ * @param {Object} tb
+ * @returns {Object}
+ */
+export function pruneTombstones(tb) {
+    if (!tb || typeof tb !== 'object') return {};
+    const maxAgeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const cutoff = Date.now() - maxAgeMs;
+    const entries = Object.entries(tb)
+        .filter(([_, ts]) => typeof ts === 'number' && ts > cutoff)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 500);
+    return Object.fromEntries(entries);
+}
+
+export function getTombstones() {
+    return { ...tombstones };
+}
+
+export function setTombstones(newTombstones = {}) {
+    tombstones = pruneTombstones(newTombstones);
+}
+
+export function clearTombstones() {
+    tombstones = {};
+}
 
 /**
  * Robustly parses a blocks_json string, returning an empty array on invalid or corrupt input.
@@ -75,24 +105,52 @@ export function resolveScopeTarget(scopeType, context) {
 
 /**
  * Merges local and server NPC collections cleanly without losing records created on either device.
- * For conflicting IDs, the record with the higher updated_at timestamp wins.
+ * Respects deletion tombstones so deleted NPCs do not resurrect across devices (H1).
+ * For conflicting IDs, strictly newer updated_at timestamp wins; ties preserve local mutations (H2).
  * @param {Array<Object>} localList
  * @param {Array<Object>} serverList
+ * @param {Object} [localTombstones={}]
+ * @param {Object} [serverTombstones={}]
  * @returns {Array<Object>}
  */
-export function mergeNpcCollections(localList = [], serverList = []) {
+export function mergeNpcCollections(localList = [], serverList = [], localTombstones = {}, serverTombstones = {}) {
     if (!Array.isArray(localList)) localList = [];
     if (!Array.isArray(serverList)) serverList = [];
 
+    const mergedTombstones = {
+        ...tombstones,
+        ...(typeof localTombstones === 'object' && localTombstones !== null ? localTombstones : {}),
+        ...(typeof serverTombstones === 'object' && serverTombstones !== null ? serverTombstones : {}),
+    };
+
+    // Collect any inline tombstones or deletion markers if present in collections
+    for (const item of [...localList, ...serverList]) {
+        if (!item || !item.id) continue;
+        if (item.deleted_at || item.is_deleted) {
+            const delTs = item.deleted_at || item.updated_at || Date.now();
+            mergedTombstones[item.id] = Math.max(mergedTombstones[item.id] || 0, delTs);
+        }
+    }
+
     const map = new Map();
+
+    const isRecordDeleted = (npc) => {
+        const deletedAt = mergedTombstones[npc.id];
+        if (!deletedAt) return false;
+        const recordTs = npc.updated_at || npc.created_at || 0;
+        return deletedAt >= recordTs;
+    };
 
     for (const npc of localList) {
         if (!npc || !npc.id) continue;
+        if (isRecordDeleted(npc)) continue;
         map.set(npc.id, npc);
     }
 
     for (const serverNpc of serverList) {
         if (!serverNpc || !serverNpc.id) continue;
+        if (isRecordDeleted(serverNpc)) continue;
+
         if (!map.has(serverNpc.id)) {
             map.set(serverNpc.id, serverNpc);
         } else {
@@ -100,7 +158,8 @@ export function mergeNpcCollections(localList = [], serverList = []) {
             const serverTs = serverNpc.updated_at || serverNpc.created_at || 0;
             const localTs = existing.updated_at || existing.created_at || 0;
 
-            if (serverTs >= localTs) {
+            // Server wins only if strictly newer; local wins on ties
+            if (serverTs > localTs) {
                 map.set(serverNpc.id, serverNpc);
             }
         }
@@ -124,10 +183,16 @@ export async function initDatabase() {
 
     const lf = getLocalforage();
     let localNpcs = [];
+    let localTombstones = {};
 
     try {
         const raw = lf ? await lf.getItem(STORAGE_KEY) : null;
         localNpcs = Array.isArray(raw) ? raw : [];
+
+        const rawTb = lf ? await lf.getItem(TOMBSTONES_KEY) : null;
+        if (rawTb && typeof rawTb === 'object') {
+            localTombstones = rawTb;
+        }
     } catch (err) {
         // Never save over data we could not read.
         loadFailed = true;
@@ -144,29 +209,37 @@ export async function initDatabase() {
 
     if (isServerSync && settings) {
         const serverNpcs = Array.isArray(settings.server_db) ? settings.server_db : [];
+        const serverTombstones = (settings.server_tombstones && typeof settings.server_tombstones === 'object')
+            ? settings.server_tombstones
+            : {};
+
+        tombstones = pruneTombstones({ ...localTombstones, ...serverTombstones });
+
         if (serverNpcs.length > 0 || localNpcs.length > 0) {
-            npcs = mergeNpcCollections(localNpcs, serverNpcs);
+            npcs = mergeNpcCollections(localNpcs, serverNpcs, tombstones);
 
             // If local storage was empty or changed, update local cache
-            const localJson = JSON.stringify(localNpcs);
-            const mergedJson = JSON.stringify(npcs);
-            if (lf && localJson !== mergedJson) {
+            if (lf) {
                 try {
+                    if (Object.keys(tombstones).length > 0) {
+                        await lf.setItem(TOMBSTONES_KEY, tombstones);
+                    }
                     await lf.setItem(STORAGE_KEY, npcs);
-                } catch (_) {}
+                } catch (err) {
+                    console.warn('[NPC Tracker] Failed to update local cache during init:', err);
+                }
             }
 
-            // If server settings had no NPCs or was out of sync, seed server settings
-            const serverJson = JSON.stringify(serverNpcs);
-            if (serverJson !== mergedJson) {
-                settings.server_db = npcs;
-                settings.server_db_updated_at = Date.now();
-                context.saveSettingsDebounced?.();
-            }
+            // If server settings had no NPCs or was out of sync, update server settings
+            settings.server_db = npcs;
+            settings.server_tombstones = tombstones;
+            settings.server_db_updated_at = Date.now();
+            context.saveSettingsDebounced?.();
         } else {
             npcs = [];
         }
     } else {
+        tombstones = pruneTombstones(localTombstones);
         npcs = localNpcs;
     }
 
@@ -195,6 +268,9 @@ export async function saveDatabaseNow() {
     // 1. Client cache (localforage)
     if (lf) {
         try {
+            if (Object.keys(tombstones).length > 0) {
+                await lf.setItem(TOMBSTONES_KEY, tombstones);
+            }
             await lf.setItem(STORAGE_KEY, npcs);
         } catch (err) {
             console.error('[NPC Tracker] Failed to persist data to localforage:', err);
@@ -208,7 +284,16 @@ export async function saveDatabaseNow() {
             const settings = context.extensionSettings[MODULE_NAME];
             const isServerSync = settings.serverSync !== false;
             if (isServerSync) {
+                const serverNpcs = Array.isArray(settings.server_db) ? settings.server_db : [];
+                const serverTombstones = (settings.server_tombstones && typeof settings.server_tombstones === 'object')
+                    ? settings.server_tombstones
+                    : {};
+                // H3: Merge with server before setting to avoid clobbering newer server records
+                tombstones = pruneTombstones({ ...tombstones, ...serverTombstones });
+                npcs = mergeNpcCollections(npcs, serverNpcs, tombstones);
+
                 settings.server_db = npcs;
+                settings.server_tombstones = tombstones;
                 settings.server_db_updated_at = Date.now();
                 context.saveSettingsDebounced();
             }
@@ -311,6 +396,7 @@ export function deleteNpc(id) {
     const idx = npcs.findIndex((n) => n.id === id);
     if (idx !== -1) {
         npcs.splice(idx, 1);
+        tombstones[id] = Date.now();
         scheduleSave();
         return true;
     }
@@ -362,6 +448,7 @@ export function linkNpcScope(npcId, scopeType, targetId, relationshipSummary = '
         }));
     }
 
+    npc.updated_at = Date.now();
     scheduleSave();
 }
 
@@ -377,6 +464,7 @@ export function unlinkNpcScope(npcId, scopeType, targetId) {
 
     const targetStr = String(targetId);
     npc.links = npc.links.filter((l) => !(l.scope_type === scopeType && String(l.target_id) === targetStr));
+    npc.updated_at = Date.now();
     scheduleSave();
 }
 
@@ -406,6 +494,7 @@ export function setNpcScopeStatus(npcId, scopeType, targetId, isActive) {
     const link = npc.links.find((l) => l.scope_type === scopeType && String(l.target_id) === targetStr);
     if (link) {
         link.is_active = isActive ? 1 : 0;
+        npc.updated_at = Date.now();
         scheduleSave();
     }
 }
