@@ -244,6 +244,135 @@ test('evaluateSettingAwareTriggers clamps negative or invalid scan depth (I4)', 
     assert.equal(resNegative.length, 2);
 });
 
+test('evaluateSettingAwareTriggers honors scan depth window in context chat', async () => {
+    const { evaluateSettingAwareTriggers } = await import('../src/scanner/chat-scanner.js');
+    const testNpcs = [
+        { name: 'Alice', location_keywords: 'library' },
+        { name: 'Bob', location_keywords: 'tavern' },
+    ];
+
+    // Mock SillyTavern context chat with 5 messages
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            chat: [
+                { mes: 'We arrive at the ancient library to read books.' }, // 5 msgs ago
+                { mes: 'The weather is rainy.' },                           // 4 msgs ago
+                { mes: 'We leave the street.' },                            // 3 msgs ago
+                { mes: 'We entered the loud tavern.' },                     // 2 msgs ago
+                { mes: 'The drinks are flowing.' },                         // 1 msg ago
+            ],
+        }),
+    };
+
+    // Depth 2: only scans last 2 messages ('loud tavern', 'drinks flowing') -> only Bob matches
+    const depth2 = evaluateSettingAwareTriggers(testNpcs, 2);
+    assert.equal(depth2.length, 1);
+    assert.equal(depth2[0].name, 'Bob');
+
+    // Depth 5: scans all 5 messages -> both Alice and Bob match
+    const depth5 = evaluateSettingAwareTriggers(testNpcs, 5);
+    assert.equal(depth5.length, 2);
+
+    delete globalThis.SillyTavern;
+});
+
+test('syncPromptInjection respects general top-level settingAwareFilter and matchDepth without LLM scanner enabled', async () => {
+    const { syncPromptInjection } = await import('../src/injection.js');
+    let injectedPrompt = '';
+
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            chatId: 'test_chat',
+            chatMetadata: {},
+            chat: [
+                { mes: 'We entered the loud tavern.' },
+            ],
+            setExtensionPrompt: (key, prompt) => {
+                injectedPrompt = prompt;
+            },
+        }),
+    };
+
+    const activeNpcs = [
+        { id: '1', name: 'Alice', location_keywords: 'library', template_mode: 'blocks', blocks: [] },
+        { id: '2', name: 'Bob', location_keywords: 'tavern', template_mode: 'blocks', blocks: [] },
+    ];
+
+    // With settingAwareFilter: true and matchDepth: 5, scanner.enabled: false
+    const settings = {
+        enabled: true,
+        settingAwareFilter: true,
+        matchDepth: 5,
+        scanner: { enabled: false },
+    };
+
+    syncPromptInjection(settings, activeNpcs);
+    assert.ok(injectedPrompt.includes('Bob'), 'Bob should be injected');
+    assert.ok(!injectedPrompt.includes('Alice'), 'Alice should not be injected when setting does not match');
+
+    delete globalThis.SillyTavern;
+});
+
+test('chat-scanner salvage engine - captures novel keys and maps camelCase/fuzzy keys', async () => {
+    const { scanRecentChat } = await import('../src/scanner/chat-scanner.js');
+    const { getActiveContextNpcs } = await import('../src/db/sqlite-store.js');
+
+    // Mock SillyTavern context with an extraction LLM response that includes novel and camelCase keys
+    globalThis.SillyTavern = {
+        getContext: () => ({
+            chatId: 'salvage_chat',
+            chatMetadata: {},
+            chat: [{ mes: 'Hello world' }],
+            generateRaw: async () => JSON.stringify([
+                {
+                    name: 'Salvage NPC',
+                    speechStyle: 'Speaks in whispered riddles',
+                    appearance: 'Silver hair and amber eyes',
+                    combatWeapon: 'Dual vibrating daggers',
+                    secretTies: 'Underground resistance informant',
+                },
+            ]),
+            extensionSettings: {
+                npc_tracker: {
+                    enabled: true,
+                    defaultScope: 'chat',
+                    activeTemplateId: 'classic',
+                    scanner: { enabled: true, scanDepth: 5 },
+                },
+            },
+        }),
+    };
+
+    const result = await scanRecentChat({ scanDepth: 1 });
+    assert.equal(result.created, 1);
+
+    const npcs = getActiveContextNpcs();
+    const createdNpc = npcs.find((n) => n.name === 'Salvage NPC');
+    assert.ok(createdNpc, 'NPC must be created');
+
+    // Fuzzy matching matched speechStyle to speech_style
+    const speechBlock = createdNpc.blocks.find((b) => b.id === 'speech_style');
+    assert.ok(speechBlock, 'speech_style block must exist');
+    assert.equal(speechBlock.value, 'Speaks in whispered riddles');
+
+    // Novel fields salvaged as custom blocks
+    const weaponBlock = createdNpc.blocks.find((b) => b.id === 'custom_combatweapon');
+    assert.ok(weaponBlock, 'combatWeapon must be salvaged into a custom block');
+    assert.equal(weaponBlock.label, 'Combat Weapon');
+    assert.equal(weaponBlock.value, 'Dual vibrating daggers');
+
+    const tiesBlock = createdNpc.blocks.find((b) => b.id === 'custom_secretties');
+    assert.ok(tiesBlock, 'secretTies must be salvaged into a custom block');
+    assert.equal(tiesBlock.label, 'Secret Ties');
+    assert.equal(tiesBlock.value, 'Underground resistance informant');
+
+    delete globalThis.SillyTavern;
+    delete globalThis.fetch;
+});
+
+
+
+
 test('index.js - scannerSettings is initialized before refreshPresetsUI or any references', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');

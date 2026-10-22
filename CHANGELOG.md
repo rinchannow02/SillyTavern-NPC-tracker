@@ -9,6 +9,19 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.1.3] - 2026-10-22
+
+### Added
+- **Match Scan Depth Adjustment:** Added user-configurable `matchDepth` input for Setting-Aware Selective Prompt Injection in the general injection settings, allowing users to tune how many recent chat messages (1–100) are inspected for NPC name, alias, and location matches without requiring the LLM Chat Scanner to be active.
+- **Modular Preset Separation:** Deconstructed monolithic template definitions in `preset-manager.js` into standalone, easily editable JSON preset files under `src/templates/presets/` (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`).
+- **Appearance & Inter-NPC Relationship Mapping:** Added dedicated `appearance` blocks across all presets (fixing blindspots in Slice of Life and Cyberpunk) and upgraded `relationship` blocks into pairwise connection maps covering inter-NPC social dynamics in addition to user ties.
+- **Chat Scanner Failsafe & Salvage Engine:** Implemented normalized alphanumeric key matching to support casing/separator variations (e.g. `speechStyle` -> `speech_style`) and dynamic custom block salvage, automatically preserving any novel attributes returned by the LLM as custom blocks with zero data loss.
+
+### Fixed
+- **Visual Extension Drawer Gap:** Removed excessive bottom margin on `.st-npc-settings` in `style.css` (reset to `margin-bottom: 0`), perfectly eliminating the unwanted vertical gap between the NPC Tracker drawer header and adjacent extension drawers. Added `id="st_npc_settings_drawer"` and `id="st_npc_settings_content"` in `src/ui/settings.html` to align with editor modal reopening logic.
+
+---
+
 ## [1.1.2] - 2026-10-21
 
 ### Added

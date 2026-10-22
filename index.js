@@ -65,10 +65,13 @@ const DEFAULT_SETTINGS = Object.freeze({
     injectionRole: 0, // 0 = system, 1 = user, 2 = assistant
     activeTemplateId: 'classic',
     customTemplates: [],
+    settingAwareFilter: false,
+    matchDepth: 4,
     scanner: {
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
         scanDepth: 10,
+        matchDepth: 4,
         maxTokens: 800,
         temperature: 0.2,
         triggerMode: 'manual', // 'manual' | 'every_n_messages' | 'on_keyword'
@@ -369,6 +372,40 @@ async function renderSettingsDrawer(settings) {
             settings.injectionPosition = Number.isFinite(n) ? n : 1;
             context.saveSettingsDebounced();
             syncPromptInjection(settings);
+        });
+
+        // Bind Setting-Aware Selective Injection Checkbox
+        const settingAwareCheckbox = $('#st_npc_setting_aware_enabled');
+        const isSettingAware = Boolean(settings.settingAwareFilter ?? scannerSettings.settingAwareFilter);
+        settingAwareCheckbox.prop('checked', isSettingAware);
+        if (isSettingAware) {
+            $('#st_npc_setting_aware_depth_row').show();
+        }
+        settingAwareCheckbox.off('change').on('change', () => {
+            const checked = settingAwareCheckbox.prop('checked');
+            settings.settingAwareFilter = checked;
+            scannerSettings.settingAwareFilter = checked;
+            if (checked) {
+                $('#st_npc_setting_aware_depth_row').slideDown(150);
+            } else {
+                $('#st_npc_setting_aware_depth_row').slideUp(150);
+            }
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
+            updateDrawerStats();
+        });
+
+        // Bind Setting-Aware Match Scan Depth Input
+        const matchDepthInput = $('#st_npc_match_depth');
+        const initialMatchDepth = settings.matchDepth ?? scannerSettings.matchDepth ?? 4;
+        matchDepthInput.val(initialMatchDepth);
+        matchDepthInput.off('change').on('change', () => {
+            const val = Math.max(1, parseInt(String(matchDepthInput.val()), 10) || 4);
+            settings.matchDepth = val;
+            scannerSettings.matchDepth = val;
+            context.saveSettingsDebounced();
+            syncPromptInjection(settings);
+            updateDrawerStats();
         });
 
         // Bind Custom Injection Prompt Format
@@ -690,16 +727,6 @@ async function renderSettingsDrawer(settings) {
             context.saveSettingsDebounced();
         });
 
-        // Setting-Aware Selective Injection Checkbox
-        const settingAwareCheckbox = $('#st_npc_setting_aware_enabled');
-        settingAwareCheckbox.prop('checked', Boolean(scannerSettings.settingAwareFilter));
-        settingAwareCheckbox.off('change').on('change', () => {
-            scannerSettings.settingAwareFilter = settingAwareCheckbox.prop('checked');
-            context.saveSettingsDebounced();
-            syncPromptInjection(settings);
-            updateDrawerStats();
-        });
-
         // Custom Scanner Prompt Textarea & Toggle
         const promptTextarea = $('#st_npc_scanner_prompt');
         const currentActivePreset = getPresetById(settings.activeTemplateId || 'classic', settings.customTemplates);
@@ -961,7 +988,7 @@ jQuery(async () => {
             if (context.event_types?.GENERATION_STARTED) {
                 context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
                     const currentSettings = SillyTavern.getContext().extensionSettings?.[MODULE_NAME];
-                    if (currentSettings?.enabled && currentSettings?.scanner?.settingAwareFilter) {
+                    if (currentSettings?.enabled && (currentSettings.settingAwareFilter || currentSettings.scanner?.settingAwareFilter)) {
                         const active = getActiveContextNpcs();
                         syncPromptInjection(currentSettings, active);
                         updateDrawerStats(active);

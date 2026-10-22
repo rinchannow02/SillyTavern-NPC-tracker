@@ -1,10 +1,10 @@
-<div class="st-npc-settings">
+<div class="st-npc-settings" id="st_npc_settings_drawer">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
             <b>NPC Tracker</b>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
-        <div class="inline-drawer-content">
+        <div class="inline-drawer-content" id="st_npc_settings_content">
             <div class="st-npc-section">
                 <label class="checkbox_label" for="st_npc_enabled">
                     <input id="st_npc_enabled" type="checkbox" class="checkbox" />
@@ -39,6 +39,21 @@
                         <option value="1">In-Chat (Pos 1)</option>
                         <option value="0">System Prompt (Pos 0)</option>
                     </select>
+                </div>
+            </div>
+
+            <div class="st-npc-section">
+                <label class="checkbox_label" for="st_npc_setting_aware_enabled" title="Only inject NPCs whose name, aliases, or location keywords match recent chat messages.">
+                    <input id="st_npc_setting_aware_enabled" type="checkbox" class="checkbox" />
+                    <span>Setting-Aware Selective Prompt Injection</span>
+                </label>
+                <div class="st-npc-hint" style="font-size: 0.78em; opacity: 0.75; margin-left: 24px;">
+                    Only injects NPCs when their name, aliases, or location keywords match recent chat messages.
+                </div>
+                <div id="st_npc_setting_aware_depth_row" style="display: none; margin-top: 6px; margin-left: 24px;">
+                    <label for="st_npc_match_depth" style="font-size: 0.85em; opacity: 0.85; margin-bottom: 2px;"><b>Match Scan Depth (Messages)</b></label>
+                    <input id="st_npc_match_depth" type="number" min="1" max="100" class="text_pole" value="4" title="Number of recent chat messages to scan for NPC names, aliases, and location keywords." />
+                    <span class="st-npc-hint" style="font-size: 0.75em; opacity: 0.7;">How deep the plugin checks the recent conversation for matches (default: 4).</span>
                 </div>
             </div>
 
@@ -145,8 +160,8 @@
                             </select>
                         </div>
                         <div class="st-npc-grid-col">
-                            <label for="st_npc_scanner_depth">Scan Depth (Msgs)</label>
-                            <input id="st_npc_scanner_depth" type="number" min="2" max="50" class="text_pole" value="10" />
+                            <label for="st_npc_scanner_depth">LLM Scan Depth (Msgs)</label>
+                            <input id="st_npc_scanner_depth" type="number" min="2" max="50" class="text_pole" value="10" title="Number of recent chat messages to analyze with LLM for NPC extraction" />
                         </div>
                     </div>
 
@@ -175,12 +190,7 @@
                         </div>
                     </div>
 
-                    <div class="st-npc-form-group">
-                        <label class="checkbox_label" for="st_npc_setting_aware_enabled">
-                            <input id="st_npc_setting_aware_enabled" type="checkbox" class="checkbox" />
-                            <span>Setting-Aware Selective Prompt Injection</span>
-                        </label>
-                    </div>
+
 
                     <div class="st-npc-scanner-prompt-wrapper" style="margin-top: 10px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px;">
                         <div class="st-npc-prompt-toggle-header" id="st_npc_scanner_prompt_toggle" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none;">

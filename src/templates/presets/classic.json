@@ -1,0 +1,15 @@
+{
+  "id": "classic",
+  "name": "Classic (Standard)",
+  "description": "Standard character tracking for general roleplay (Appearance, Personality, Speaking Style, Relationship, Bio).",
+  "isBuiltin": true,
+  "blocks": [
+    { "id": "appearance", "label": "Appearance", "type": "text", "value": "" },
+    { "id": "personality", "label": "Personality", "type": "text", "value": "" },
+    { "id": "speech_style", "label": "Tone & Speaking Style", "type": "text", "value": "" },
+    { "id": "relationship", "label": "Relationships", "type": "text", "value": "" },
+    { "id": "bio", "label": "Short Bio & Background", "type": "text", "value": "" }
+  ],
+  "template": "### NPC: {{name}} [{{group}}]\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}\n- **Speaking Style:** {{speech_style}}\n- **Relationships:** {{relationship}}\n- **Bio:** {{bio}}",
+  "extractionPrompt": "Extract newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.\nDo NOT extract the main user persona or the primary character.\nOnly account for NPCs that regularly appear or actively interact in the story.\n\nFor each NPC found, output a JSON array of objects with the following keys:\n- \"name\": string (Full or recognized name of the NPC)\n- \"aliases\": string (Comma-separated nicknames, titles, or aliases, or empty string)\n- \"group_name\": string (Faction, department, or establishment, or empty string)\n- \"location_keywords\": string (Comma-separated setting keywords where this NPC appears, or empty string)\n- \"appearance\": string (Physical traits, age cues, build, and attire)\n- \"personality\": string (Concise behavioral tags or demeanor)\n- \"speech_style\": string (Tone of voice, speech patterns, verbal mannerisms, or accent for the LLM to roleplay)\n- \"relationship\": string (Concise pairwise ties to user and other NPCs, e.g. \"{{user}} - Friend, David - Guard Captain (rival)\")\n- \"bio\": string (Short background, backstory, or notable context up to ~200 words)\n\nOutput ONLY the valid JSON array inside a ```json``` code block without preamble or explanation."
+}

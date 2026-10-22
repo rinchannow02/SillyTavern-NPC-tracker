@@ -1,7 +1,7 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.1.2`
+- **Current Version:** `1.1.3`
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
 - **Versioning Policy:** `1.x.x` (Major), `x.1.x` (Feature updates), `x.x.1` (Minor / hotfix / security)
 - **Base Integration Branch:** `staging`
@@ -90,4 +90,13 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
   - Fixed indentation of `scanRecentChat`, removed model vendor hint ("GLM-5.3-flash"), and cleaned up stale SQLite/Milestone 4 comments across the codebase.
   - Dropped meaningless `id: Date.now()` generation on embedded scope links.
 - **Verification:** 28/28 unit tests passing via `node --test test/*.mjs`.
+
+## Fourth Audit & Feature Updates — 1.1.3 (2026-10-22)
+- **Visual Gap Fix:** Removed `.st-npc-settings { margin-bottom: 12px; }` in `style.css` (reset to `margin-bottom: 0`), perfectly eliminating the excess vertical gap between the NPC Tracker drawer header and adjacent extension drawers (e.g. NPC Name Suggester). Added `id="st_npc_settings_drawer"` and `id="st_npc_settings_content"` in `src/ui/settings.html` to align with editor modal reopening logic.
+- **Match Scan Depth Adjustment (General Setting):** Moved Setting-Aware Selective Prompt Injection and its `matchDepth` input (`#st_npc_match_depth`) out of the LLM Chat Scanner panel into the general prompt injection settings in `src/ui/settings.html`. Setting-aware filtering is purely local (matching keywords/names in recent chat) and no longer requires enabling or opening the LLM Chat Scanner. Wired through `index.js`, `src/injection.js`, and the `GENERATION_STARTED` event.
+- **Template Separation & Schema Enhancements:** Deconstructed monolithic template definitions in `src/templates/preset-manager.js` into standalone, easily editable JSON preset files under `src/templates/presets/` (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`). Added `appearance` blocks across all presets (fixing blindspots in Slice of Life and Cyberpunk) and expanded `relationship` blocks into pairwise connection maps covering inter-NPC social dynamics in addition to user ties.
+- **Scanner Salvage Engine & Fuzzy Matching:** Implemented two-tier salvage in `src/scanner/chat-scanner.js`: (1) Normalized alphanumeric key matching to support casing/separator variations (e.g. `speechStyle` -> `speech_style`), and (2) Dynamic Custom Block Salvage to automatically convert any novel attributes returned by the LLM into safe custom blocks (`custom_<key>`), ensuring zero data loss.
+- **Verification:** 36/36 unit tests passing via `node --test`.
+
+
 

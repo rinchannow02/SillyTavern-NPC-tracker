@@ -130,8 +130,9 @@ export function syncPromptInjection(customSettings, activeNpcsList = null) {
     }
 
     let targetNpcs = activeNpcs;
-    if (settings.scanner?.settingAwareFilter) {
-        targetNpcs = evaluateSettingAwareTriggers(activeNpcs, settings.scanner?.scanDepth || 4);
+    if (settings.scanner?.settingAwareFilter || settings.settingAwareFilter) {
+        const matchDepth = Math.max(1, parseInt(String(settings.matchDepth ?? settings.scanner?.matchDepth ?? settings.scanner?.scanDepth ?? 4), 10) || 4);
+        targetNpcs = evaluateSettingAwareTriggers(activeNpcs, matchDepth);
     }
 
     const promptText = formatActiveNpcsPrompt(targetNpcs, settings.injectionTemplate);
