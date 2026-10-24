@@ -9,6 +9,40 @@ This project follows a simple semantic versioning structure:
 
 ---
 
+## [1.2.0] - 2026-10-22
+
+### Added
+- **Multi-Device Server Sync (PC & Mobile):**
+  - Implemented dual-layer persistence combining ultra-fast local client caching (`localforage` / IndexedDB) with SillyTavern's native server settings synchronization (`extensionSettings.npc_tracker.server_db` and `context.saveSettingsDebounced()`).
+  - Added smart hydration and conflict resolution in `mergeNpcCollections()`: mobile devices connecting for the first time automatically pull the complete NPC database from the server without requiring manual export/import steps.
+  - Conflicts between devices are resolved by timestamp comparison (`updated_at`), preserving any new NPCs or edits made on either device without data loss.
+  - Added user toggle `Sync Database to Server (Multi-Device)` under Database Management in the NPC Tracker settings drawer (enabled by default).
+
+### Fixed
+- **Tombstone Deletion Propagation (H1):** Fixed an issue where deleting an NPC on one device resurrected the NPC upon syncing with another device or local cache. Deletions now record lightweight tombstones pruned at 30 days so deletions propagate cleanly across all devices.
+- **Scope Link Timestamp Bumping (H2):** Fixed an issue where toggling scope links (`linkNpcScope`, `unlinkNpcScope`, `setNpcScopeStatus`) failed to bump `updated_at`, causing newer local link states to be silently reverted by server copies.
+- **Multi-Device Concurrent Write Safety (H3 & H4):** Saving to server settings now merges local records against current server data to prevent last-writer-wins clobbering across concurrent tabs/devices. Re-enabling server sync in settings safely hydrates and merges with existing server data instead of overwriting.
+- **Mobile Browser Compatibility (M1):** Converted preset schemas to standard ES module exports (`.js`), completely eliminating syntax errors caused by JSON import attributes (`with { type: 'json' }`) in mobile Safari < 17.2, Chrome < 123, and Firefox < 138.
+- **Setting-Aware Filter Migration & Dual State Elimination (M3):** Cleaned up duplicated `settingAwareFilter` and `matchDepth` states between top-level and scanner settings, ensuring upgraded users preserve their custom settings seamlessly.
+- **Server Sync Opt-out Data Cleanup (M4):** Disabling the server sync toggle now cleans up `server_db` and `server_tombstones` from server settings.
+- **Fuzzy Metadata Matching & Bounded Salvage Engine (L1, L2):** Enhanced key extraction to capture casing variations (e.g. `groupName`, `Location`) without dropping fields, and capped salvaged custom blocks to 5 blocks (max 500 characters each).
+- **Group Hierarchy Branch Recognition (L3):** Prevented location branches in parentheses (e.g. `(Tokyo Branch)`) from being misattributed to character occupation blocks.
+
+---
+
+## [1.1.4] - 2026-10-22
+
+### Added
+- **Hierarchical Group Formatting & Title Leakage Prevention:**
+  - Updated all extraction prompts (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`, and `DEFAULT_EXTRACTION_PROMPT`) with explicit instructions to format organizational sub-units as `"Parent / Subgroup"` (e.g. `"Hikari Co. / Accounting"`, `"Hikari Co. / IT"`), keeping parent group names consistent so related NPCs cleanly collapse into a singular group folder.
+  - Added strict negative constraints preventing LLMs from putting job titles, ranks, or positions into group names, reinforcing that titles belong exclusively in the character sheet blocks (`occupation`, `role_class`, `faction_role`).
+- **Defensive Group Normalization & Title Salvage Engine:**
+  - Implemented `cleanAndNormalizeGroupName()` in `src/scanner/chat-scanner.js` to automatically convert em-dashes (`—`), en-dashes (`–`), spaced hyphens (` - `), and colons (`:`) into the standard `/` hierarchy separator.
+  - Automatically strips trailing parenthesized roles/titles (e.g. `(Section Chief)`) from group names and backfills them into the character's empty `occupation` or role block so no context is lost.
+  - Added seamless merging for separate `subgroup`, `sub_group`, `department`, or `division` keys emitted by LLM models.
+
+---
+
 ## [1.1.3] - 2026-10-22
 
 ### Added

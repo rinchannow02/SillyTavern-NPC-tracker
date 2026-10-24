@@ -3,10 +3,10 @@
  * @description Preset manager for customizable NPC database templates, export/import, and built-in genre schemas.
  */
 
-import classicPreset from './presets/classic.json' with { type: 'json' };
-import sliceOfLifePreset from './presets/slice_of_life.json' with { type: 'json' };
-import adventureFantasyPreset from './presets/adventure_fantasy.json' with { type: 'json' };
-import rpgScifiPreset from './presets/rpg_scifi.json' with { type: 'json' };
+import classicPreset from './presets/classic.js';
+import sliceOfLifePreset from './presets/slice_of_life.js';
+import adventureFantasyPreset from './presets/adventure_fantasy.js';
+import rpgScifiPreset from './presets/rpg_scifi.js';
 
 /**
  * Deep freezes a preset object and its inner blocks for immutability.

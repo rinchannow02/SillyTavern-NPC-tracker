@@ -167,4 +167,60 @@ test('chat-scanner salvage engine - formatKeyToLabel and normalizeKey handle sna
     assert.equal(normalizeKey('relationship_summary'), 'relationshipsummary');
 });
 
+test('cleanAndNormalizeGroupName - normalizes delimiters, merges subgroups, and rescues leaked titles', async () => {
+    const { cleanAndNormalizeGroupName } = await import('../src/scanner/chat-scanner.js');
+
+    // 1. Em-dash and parenthetical title rescue
+    const blocks1 = [
+        { id: 'occupation', label: 'Occupation', value: '' },
+        { id: 'bio', label: 'Bio', value: '' },
+    ];
+    const group1 = cleanAndNormalizeGroupName(
+        'Hikari Co. — Accounting Department (Section Chief)',
+        {},
+        blocks1
+    );
+    assert.equal(group1, 'Hikari Co. / Accounting Department');
+    assert.equal(blocks1[0].value, 'Section Chief', 'Rescued title must be placed in empty occupation block');
+
+    // 2. Spaced hyphens, en-dashes, and colons
+    assert.equal(
+        cleanAndNormalizeGroupName('Hikari Co. - IT Department'),
+        'Hikari Co. / IT Department'
+    );
+    assert.equal(
+        cleanAndNormalizeGroupName('Hikari Co. – General Affairs'),
+        'Hikari Co. / General Affairs'
+    );
+    assert.equal(
+        cleanAndNormalizeGroupName('Hikari Co.: Data Analysis'),
+        'Hikari Co. / Data Analysis'
+    );
+
+    // 3. Does not break hyphenated words
+    assert.equal(
+        cleanAndNormalizeGroupName('Sci-Fi Club - Robotics Lab'),
+        'Sci-Fi Club / Robotics Lab'
+    );
+
+    // 4. Merging separate subgroup/department keys
+    assert.equal(
+        cleanAndNormalizeGroupName('Hikari Co.', { subgroup: 'Data Analysis' }),
+        'Hikari Co. / Data Analysis'
+    );
+    assert.equal(
+        cleanAndNormalizeGroupName('Hikari Co.', { department: 'IT Department' }),
+        'Hikari Co. / IT Department'
+    );
+
+    // 5. Hierarchy prompt check across all presets
+    const { BUILTIN_PRESETS } = await import('../src/templates/preset-manager.js');
+    for (const preset of Object.values(BUILTIN_PRESETS)) {
+        assert.ok(
+            preset.extractionPrompt.includes('Parent / Subgroup'),
+            `Preset ${preset.id} must include Parent / Subgroup guidance in extractionPrompt`
+        );
+    }
+});
+
 

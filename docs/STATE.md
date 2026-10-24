@@ -1,7 +1,7 @@
 # Project State: SillyTavern-NPC-tracker
 
 ## Current Focus
-- **Current Version:** `1.1.3`
+- **Current Version:** `1.2.0`
 - **Active Branching Model:** Feature Branches (`feat/<feature-name>`, `fix/<bug-name>`)
 - **Versioning Policy:** `1.x.x` (Major), `x.1.x` (Feature updates), `x.x.1` (Minor / hotfix / security)
 - **Base Integration Branch:** `staging`
@@ -19,6 +19,7 @@
 | Feature Branch | Status | Assigned Lane / Agent | Scope Summary |
 | :--- | :--- | :--- | :--- |
 | `feat/block-template-conversion` | `COMPLETED` | Antigravity AI | Two-way conversion with prompt on tab change between Block Editor and Freeform Template, hierarchical Group / Sub-Group tree selector, customizable genre presets (Slice-of-Life, Adventure, RPG, Classic) with export/import and template selectors |
+| `feat/server-sync-storage` | `COMPLETED` | Antigravity AI | Multi-device server-synced persistence leveraging SillyTavern's native settings synchronization (`extensionSettings[MODULE_NAME]` + `saveSettingsDebounced`) with localforage fast client caching and conflict resolution |
 
 ## Active Decisions & Constraints
 - Module Name: `npc_tracker`
@@ -98,5 +99,24 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 - **Scanner Salvage Engine & Fuzzy Matching:** Implemented two-tier salvage in `src/scanner/chat-scanner.js`: (1) Normalized alphanumeric key matching to support casing/separator variations (e.g. `speechStyle` -> `speech_style`), and (2) Dynamic Custom Block Salvage to automatically convert any novel attributes returned by the LLM into safe custom blocks (`custom_<key>`), ensuring zero data loss.
 - **Verification:** 36/36 unit tests passing via `node --test`.
 
+## Fifth Feature Update — 1.1.4 (2026-10-22)
+- **Hierarchical Group Formatting in Presets:** Updated extraction prompts across all built-in presets (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`) and `DEFAULT_EXTRACTION_PROMPT` with explicit `"Parent / Subgroup"` syntax rules (e.g. `"Hikari Co. / Accounting"`, `"Hikari Co. / IT"`). Emphasized consistent parent organization names so NPCs belonging to the same entity collapse into a unified parent folder instead of fragmenting into separate top-level folders.
+- **Title Leakage Prevention:** Enforced strict negative rules barring LLMs from injecting job titles, ranks, or positions (e.g. `(Section Chief)`, `Captain`, `Lead`) into `group_name`. Reinforced that organizational roles belong strictly in the character sheet's `occupation`, `role_class`, or `faction_role` block.
+- **Defensive Group Normalization & Delimiter Conversion:** Implemented `cleanAndNormalizeGroupName()` in `src/scanner/chat-scanner.js` to normalize varied separators (`—`, `–`, ` - `, `:`) into `/`, merge separate `subgroup`/`department` keys if emitted by the model, and automatically strip trailing parenthesized titles while backfilling them into empty `occupation`/role blocks to prevent data loss.
+## Sixth Feature Update — 1.2.0 (2026-10-22)
+- **Multi-Device Server-Synced Storage:** Implemented dual-layer persistence in `src/db/sqlite-store.js` combining `localforage` (ultra-fast client-side IndexedDB caching) with SillyTavern's server-synchronized user settings (`context.extensionSettings['npc_tracker'].server_db` and `context.saveSettingsDebounced()`).
+- **Zero Server Plugin Rule Compliance:** Achieved 100% native multi-device sync without requiring any Node.js backend routes, extra plugins, or server process restarts.
+- **Smart Hydration & Conflict Resolution:** Implemented `mergeNpcCollections()` to seamlessly hydrate newly connected devices (e.g. mobile phones connecting for the first time) from the server, while resolving any simultaneous cross-device updates using timestamp comparisons (`updated_at`) without dropping records.
+- **Drawer Setting Toggle:** Added `Sync Database to Server (Multi-Device)` checkbox (`#st_npc_server_sync`) under Database Management in `src/ui/settings.html` and bound in `index.js`.
+- **Verification:** 40/40 unit and integration tests passing via `node --test`.
 
-
+## Seventh Audit Resolution — Server Sync & Preset Modernization (2026-10-22)
+- **H1 (Tombstone Deletion Propagation):** Integrated tombstone tracking (`st_npc_tracker_tombstones` in localforage and `server_tombstones` in user settings, automatically pruned at 30 days / 500 items max). `mergeNpcCollections` checks tombstones against record update timestamps so deletions propagate across all connected devices and deleted NPCs never resurrect.
+- **H2 (Scope Link Timestamp Bumping):** Updated `linkNpcScope`, `unlinkNpcScope`, and `setNpcScopeStatus` to set `npc.updated_at = Date.now()`. Updated `mergeNpcCollections` so ties preserve local un-synced link modifications instead of allowing an older server copy to clobber them.
+- **H3 & H4 (Server Settings Safe Merge):** In `saveDatabaseNow()`, merged local in-memory records with the server-side `server_db` and `server_tombstones` before persisting to prevent last-writer-wins clobbering across concurrent tabs/devices. In `index.js`, re-enabling `#st_npc_server_sync` re-merges local storage with server settings before continuing.
+- **M1 (Browser Compatibility & ES Modules):** Replaced static JSON import attributes (`import ... with { type: 'json' }`) with standard ES module JS exports (`classic.js`, `slice_of_life.js`, `adventure_fantasy.js`, `rpg_scifi.js`), ensuring full compatibility with mobile Safari < 17.2, Chrome < 123, and Firefox < 138.
+- **M3 (Legacy Scanner Migration & Dual State Elimination):** Migrated legacy `scanner.settingAwareFilter` and `scanner.scanDepth` / `scanner.matchDepth` to top-level settings during `initExtensionSettings()`, cleanly eliminating duplicated settings state and fixing un-checking bugs for upgraded users.
+- **M4 (Sync Opt-out Cleanup):** When disabling server sync in the UI, `server_db` and `server_tombstones` are removed from SillyTavern's settings.
+- **L1 & L2 (Fuzzy Metadata & Bounded Salvage):** Created `getMetadataValue` with precomputed `KNOWN_METADATA_KEYS_SET` to extract casing/delimiter variations (e.g. `groupName`, `Location`) without dropping fields. Bounded the salvage engine to a maximum of 5 dynamic custom blocks and capped text length to 500 characters.
+- **L3 & L4 (Group Location Branches & Depth Clamping):** Prevented parenthetical location branches (e.g. `(Tokyo Branch)`) from being misidentified as personal job titles, appending them cleanly as subgroups. Clamped `matchDepth` between 1 and 100 in both UI input handlers and injection triggers.
+- **Verification:** 45/45 unit and integration tests passing via `node --test test/*.test.mjs`.

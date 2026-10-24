@@ -245,6 +245,16 @@
                 </label>
             </div>
 
+            <div class="st-npc-section" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);">
+                <label class="checkbox_label" for="st_npc_server_sync" title="Syncs the NPC database with SillyTavern's server so your NPCs automatically move across devices (PC, mobile, tablet).">
+                    <input id="st_npc_server_sync" type="checkbox" class="checkbox" checked />
+                    <span>Sync Database to Server (Multi-Device)</span>
+                </label>
+                <div class="st-npc-hint" style="font-size: 0.78em; opacity: 0.75; margin-left: 24px;">
+                    Automatically syncs your NPC database with SillyTavern so your NPCs appear on mobile and desktop browsers connected to this server.
+                </div>
+            </div>
+
             <div class="st-npc-section st-npc-preview-container" id="st_npc_preview_panel" style="display: none;">
                 <label><b>Current Prompt Injection Preview:</b></label>
                 <pre id="st_npc_preview_text" class="st-npc-code-block"></pre>

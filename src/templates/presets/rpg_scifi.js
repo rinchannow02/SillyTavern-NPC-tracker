@@ -1,0 +1,18 @@
+export default {
+  "id": "rpg_scifi",
+  "name": "RPG & Cyberpunk",
+  "description": "Structured for gritty sci-fi, cyberpunk, corporations, and faction-based RPGs.",
+  "isBuiltin": true,
+  "blocks": [
+    { "id": "faction_role", "label": "Faction & Role", "type": "text", "value": "" },
+    { "id": "appearance", "label": "Appearance & Attire", "type": "text", "value": "" },
+    { "id": "cyberware_gear", "label": "Cyberware & Tech", "type": "text", "value": "" },
+    { "id": "personality", "label": "Attitude & Motive", "type": "text", "value": "" },
+    { "id": "speech_style", "label": "Street Slang & Demeanor", "type": "text", "value": "" },
+    { "id": "threat_bounty", "label": "Threat Level & Bounty", "type": "text", "value": "" },
+    { "id": "relationship", "label": "Relationships & Standing", "type": "text", "value": "" },
+    { "id": "bio", "label": "Short Bio & Dossier", "type": "text", "value": "" }
+  ],
+  "template": "### NPC: {{name}} [{{group}}]\n- **Faction & Role:** {{faction_role}}\n- **Appearance:** {{appearance}}\n- **Cyberware & Gear:** {{cyberware_gear}}\n- **Attitude:** {{personality}}\n- **Speech Style:** {{speech_style}}\n- **Threat Level:** {{threat_bounty}}\n- **Relationships:** {{relationship}}\n- **Bio:** {{bio}}",
+  "extractionPrompt": "Extract newly introduced or updated secondary/tertiary NPCs from the recent sci-fi/cyberpunk roleplay messages.\nDo NOT extract the main user persona or the primary character.\n\nFor each NPC found, output a JSON array of objects with the following keys:\n- \"name\": string (Street handle or full name)\n- \"aliases\": string (Callsigns, street tags, or corporate titles)\n- \"group_name\": string (Megacorp, gang, fixer network, or syndicate. For divisions, squads, or regional cells, use forward slash: \"Parent / Subgroup\", e.g. \"Arasaka / Counter-Intel\", \"Moxes / Lizzie's Bar\", \"NCPD / MaxTac\". Keep parent name consistent across characters. NEVER put personal job titles or callsigns in group_name; put them in faction_role. Never use dashes like \"—\" or \"-\" for sub-groups)\n- \"location_keywords\": string (District, safehouse, dive bar, cyberspace)\n- \"faction_role\": string (Specialty, corporate rank, or street role, e.g. \"Section Chief\", \"Netrunner\", \"Fixer\", \"Corp Security Exec\")\n- \"appearance\": string (Physical build, face/features, street wear or corpo attire, and distinct visual style)\n- \"cyberware_gear\": string (Visible cybernetics, high-tech weapon loadout)\n- \"personality\": string (Street attitude, vices, and hidden motives)\n- \"speech_style\": string (Street slang, corporate jargon, or verbal cadence for roleplay)\n- \"threat_bounty\": string (Combat danger rating, active bounties, or law enforcement status)\n- \"relationship\": string (Concise pairwise ties to player, fixers, and rivals, e.g. \"{{user}} - Netrunner ally, Viktor - Ripperdoc, Tanaka - Employer\")\n- \"bio\": string (Brief dossier history, criminal record, or origin up to ~200 words)\n\nOutput ONLY the valid JSON array inside a ```json``` code block without preamble or explanation."
+};
