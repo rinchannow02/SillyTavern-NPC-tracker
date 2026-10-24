@@ -224,48 +224,30 @@ export async function scanRecentChat(options = {}) {
                 };
             });
 
-            // Mark standard metadata keys as used
-            const KNOWN_METADATA_KEYS = [
-                'name',
-                'aliases',
-                'alias',
-                'group_name',
-                'group',
-                'subgroup',
-                'sub_group',
-                'department',
-                'division',
-                'faction',
-                'location_keywords',
-                'location',
-                'setting',
-                'relationship',
-                'relationships',
-                'standing',
-            ];
+            // Mark standard metadata keys as used (L1 fix & precomputed Set)
             for (const k of itemKeys) {
-                const kNorm = normalizeKey(k);
-                if (KNOWN_METADATA_KEYS.some((mk) => normalizeKey(mk) === kNorm)) {
+                if (KNOWN_METADATA_KEYS_SET.has(normalizeKey(k))) {
                     usedKeys.add(k);
                 }
             }
 
-            const safeAliases = getSafePrimitiveString(item, 'aliases') || getSafePrimitiveString(item, 'alias');
-            const rawGroupName = getSafePrimitiveString(item, 'group_name') || getSafePrimitiveString(item, 'group') || getSafePrimitiveString(item, 'faction');
+            const safeAliases = getMetadataValue(item, ['aliases', 'alias']);
+            const rawGroupName = getMetadataValue(item, ['groupname', 'group', 'faction']);
             const safeGroupName = cleanAndNormalizeGroupName(rawGroupName, item, blocks);
-            const safeLocation = getSafePrimitiveString(item, 'location_keywords') || getSafePrimitiveString(item, 'location') || getSafePrimitiveString(item, 'setting');
-            const safeRelationship = getSafePrimitiveString(item, 'relationship') || getSafePrimitiveString(item, 'relationships') || getSafePrimitiveString(item, 'standing');
+            const safeLocation = getMetadataValue(item, ['locationkeywords', 'location', 'setting']);
+            const safeRelationship = getMetadataValue(item, ['relationship', 'relationships', 'standing']);
 
-            // 2. Failsafe Salvage Engine: convert any remaining non-empty keys into dynamic custom blocks
+            // 2. Failsafe Salvage Engine: convert any remaining non-empty keys into dynamic custom blocks (bounded L2)
+            let salvagedCount = 0;
             for (const k of itemKeys) {
                 if (usedKeys.has(k)) continue;
+                if (salvagedCount >= 5) break;
+
                 const rawVal = getSafePrimitiveString(item, k);
                 if (!rawVal) continue;
 
+                const boundedVal = rawVal.length > 500 ? rawVal.slice(0, 500) : rawVal;
                 let safeId = k.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-                if (DANGEROUS_KEYS.has(safeId)) {
-                    safeId = `safe_${safeId}`;
-                }
                 const blockId = `custom_${safeId}`;
                 const blockLabel = formatKeyToLabel(k);
 
@@ -275,8 +257,9 @@ export async function scanRecentChat(options = {}) {
                         id: blockId,
                         label: blockLabel,
                         type: 'text',
-                        value: rawVal,
+                        value: boundedVal,
                     });
+                    salvagedCount++;
                 }
             }
 
@@ -451,7 +434,43 @@ export function parseExtractionResponse(rawText) {
     return [];
 }
 
-const DANGEROUS_KEYS = new Set(['constructor', '__proto__', 'prototype', 'tostring', 'valueof', 'isprototypeof']);
+export const KNOWN_METADATA_KEYS_SET = new Set([
+    'name',
+    'aliases',
+    'alias',
+    'groupname',
+    'group',
+    'subgroup',
+    'subgroup',
+    'department',
+    'division',
+    'faction',
+    'locationkeywords',
+    'location',
+    'setting',
+    'relationship',
+    'relationships',
+    'standing',
+]);
+
+/**
+ * Extracts a metadata property matching any of the candidate normalized key names (L1).
+ * @param {Object} item
+ * @param {string[]} targetNormKeys
+ * @returns {string}
+ */
+function getMetadataValue(item, targetNormKeys) {
+    if (!item || typeof item !== 'object') return '';
+    for (const [k, v] of Object.entries(item)) {
+        if (targetNormKeys.includes(normalizeKey(k))) {
+            if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+                const s = String(v).trim();
+                if (s) return s;
+            }
+        }
+    }
+    return '';
+}
 
 /**
  * Normalizes a key string to lowercase alphanumeric characters.
@@ -509,8 +528,15 @@ export function cleanAndNormalizeGroupName(rawGroup = '', item = {}, blocks = []
     let rescuedTitle = '';
     const titleMatch = group.match(/\s*\(([^)]+)\)\s*$/);
     if (titleMatch) {
-        rescuedTitle = titleMatch[1].trim();
-        group = group.replace(/\s*\([^)]+\)\s*$/, '').trim();
+        const candidate = titleMatch[1].trim();
+        // If parenthetical phrase is a branch or facility rather than a person title, preserve as subgroup
+        const isBranchOrLocation = /\b(branch|office|headquarters|hq|division|campus|facility|district|station|department|lab|sector)\b/i.test(candidate);
+        if (isBranchOrLocation) {
+            group = `${group.replace(/\s*\([^)]+\)\s*$/, '').trim()} / ${candidate}`;
+        } else {
+            rescuedTitle = candidate;
+            group = group.replace(/\s*\([^)]+\)\s*$/, '').trim();
+        }
     }
 
     // Convert em-dash (—), en-dash (–), spaced hyphen (" - "), or colon (" : ") used as hierarchy separators into "/"

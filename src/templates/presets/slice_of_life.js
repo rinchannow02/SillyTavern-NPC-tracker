@@ -1,0 +1,17 @@
+export default {
+  "id": "slice_of_life",
+  "name": "Slice of Life",
+  "description": "Tailored for contemporary, school, workplace, and slice-of-life roleplay.",
+  "isBuiltin": true,
+  "blocks": [
+    { "id": "occupation", "label": "Occupation / Role", "type": "text", "value": "" },
+    { "id": "appearance", "label": "Appearance & Style", "type": "text", "value": "" },
+    { "id": "personality", "label": "Personality & Demeanor", "type": "text", "value": "" },
+    { "id": "speech_style", "label": "Tone & Speaking Style", "type": "text", "value": "" },
+    { "id": "quirks", "label": "Habits & Quirks", "type": "text", "value": "" },
+    { "id": "relationship", "label": "Relationships", "type": "text", "value": "" },
+    { "id": "bio", "label": "Short Bio & Background", "type": "text", "value": "" }
+  ],
+  "template": "### NPC: {{name}} ({{aliases}}) [{{group}}]\n- **Occupation:** {{occupation}}\n- **Appearance:** {{appearance}}\n- **Personality:** {{personality}}\n- **Speaking Style:** {{speech_style}}\n- **Habits & Quirks:** {{quirks}}\n- **Relationships:** {{relationship}}\n- **Bio:** {{bio}}",
+  "extractionPrompt": "Extract newly introduced or updated secondary/tertiary NPCs from the recent roleplay messages.\nDo NOT extract the main user persona or the primary character.\nFocus on characters that live and interact in the everyday world.\n\nFor each NPC found, output a JSON array of objects with the following keys:\n- \"name\": string (Full name of the NPC)\n- \"aliases\": string (Nicknames, titles, or pet names)\n- \"group_name\": string (Main workplace, company, school, club, or circle. For internal departments or sub-units, format with a forward slash as \"Parent / Subgroup\", e.g. \"Hikari Co. / Accounting\", \"Hikari Co. / IT\", or \"Akademi High / Student Council\". Strict rules: always keep the top-level parent group consistent across characters so they group together; use \"/\" for sub-groups, never dashes (\"—\", \"-\"); and NEVER put personal job titles, ranks, or positions in group_name; put them in occupation instead)\n- \"location_keywords\": string (Common hangouts, e.g. \"cafe, classroom, park\")\n- \"occupation\": string (Job title, department role, student grade, or social position, e.g. \"Section Chief\", \"Network Security Engineer\", \"Class 2-B Student\", \"Cashier\")\n- \"appearance\": string (Concise physical traits, age cues, build, and everyday attire/aesthetic)\n- \"personality\": string (Demeanor, attitude, and social style)\n- \"speech_style\": string (Tone of voice, speech patterns, slang, or verbal mannerisms for the LLM to roleplay)\n- \"quirks\": string (Notable habits, mannerisms, or speech idiosyncrasies)\n- \"relationship\": string (Concise pairwise ties to user and other NPCs, e.g. \"{{user}} - Classmate, Alice - Older sister, Mark - Boss (strained)\")\n- \"bio\": string (Short backstory, daily life background, or history up to ~200 words)\n\nOutput ONLY the valid JSON array inside a ```json``` code block without preamble or explanation."
+};

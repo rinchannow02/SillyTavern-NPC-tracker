@@ -20,6 +20,7 @@ import {
     resolveScopeTarget,
     exportDatabaseToJson,
     importDatabaseFromJson,
+    saveDatabaseNow,
 } from './src/db/sqlite-store.js';
 
 import {
@@ -67,17 +68,16 @@ const DEFAULT_SETTINGS = Object.freeze({
     customTemplates: [],
     settingAwareFilter: false,
     matchDepth: 4,
+    serverSync: true,
     scanner: {
         enabled: false,
         connectionProfileId: '', // Empty = use active ST API
         scanDepth: 10,
-        matchDepth: 4,
         maxTokens: 800,
         temperature: 0.2,
         triggerMode: 'manual', // 'manual' | 'every_n_messages' | 'on_keyword'
         everyNMessages: 5,
         updateMode: 'merge_existing', // 'create_new_only' | 'merge_existing'
-        settingAwareFilter: false,
         customPrompt: '',
     },
     injectionTemplate: '[Active NPCs in Context:\n{{npcs}}\n]',
@@ -87,7 +87,7 @@ const DEFAULT_SETTINGS = Object.freeze({
  * Ensures extensionSettings['npc_tracker'] is initialized with defaults.
  * @returns {Object} The active settings object for npc_tracker.
  */
-function initExtensionSettings() {
+export function initExtensionSettings() {
     const context = SillyTavern.getContext();
     const { lodash } = SillyTavern.libs;
 
@@ -95,9 +95,27 @@ function initExtensionSettings() {
         context.extensionSettings[MODULE_NAME] = {};
     }
 
+    const existing = context.extensionSettings[MODULE_NAME];
+
+    // M3: Migrate legacy scanner.settingAwareFilter and scanner.matchDepth / scanDepth
+    if (existing && existing.scanner && typeof existing.scanner === 'object') {
+        if (existing.settingAwareFilter === undefined && existing.scanner.settingAwareFilter !== undefined) {
+            existing.settingAwareFilter = Boolean(existing.scanner.settingAwareFilter);
+        }
+        if (existing.matchDepth === undefined) {
+            if (existing.scanner.matchDepth !== undefined) {
+                existing.matchDepth = existing.scanner.matchDepth;
+            } else if (existing.scanner.scanDepth !== undefined) {
+                existing.matchDepth = existing.scanner.scanDepth;
+            }
+        }
+        delete existing.scanner.settingAwareFilter;
+        delete existing.scanner.matchDepth;
+    }
+
     context.extensionSettings[MODULE_NAME] = lodash.merge(
         lodash.cloneDeep(DEFAULT_SETTINGS),
-        context.extensionSettings[MODULE_NAME]
+        existing
     );
 
     context.saveSettingsDebounced();
@@ -376,7 +394,7 @@ async function renderSettingsDrawer(settings) {
 
         // Bind Setting-Aware Selective Injection Checkbox
         const settingAwareCheckbox = $('#st_npc_setting_aware_enabled');
-        const isSettingAware = Boolean(settings.settingAwareFilter ?? scannerSettings.settingAwareFilter);
+        const isSettingAware = Boolean(settings.settingAwareFilter);
         settingAwareCheckbox.prop('checked', isSettingAware);
         if (isSettingAware) {
             $('#st_npc_setting_aware_depth_row').show();
@@ -384,7 +402,6 @@ async function renderSettingsDrawer(settings) {
         settingAwareCheckbox.off('change').on('change', () => {
             const checked = settingAwareCheckbox.prop('checked');
             settings.settingAwareFilter = checked;
-            scannerSettings.settingAwareFilter = checked;
             if (checked) {
                 $('#st_npc_setting_aware_depth_row').slideDown(150);
             } else {
@@ -397,12 +414,12 @@ async function renderSettingsDrawer(settings) {
 
         // Bind Setting-Aware Match Scan Depth Input
         const matchDepthInput = $('#st_npc_match_depth');
-        const initialMatchDepth = settings.matchDepth ?? scannerSettings.matchDepth ?? 4;
+        const initialMatchDepth = Math.max(1, Math.min(100, parseInt(String(settings.matchDepth ?? 4), 10) || 4));
         matchDepthInput.val(initialMatchDepth);
         matchDepthInput.off('change').on('change', () => {
-            const val = Math.max(1, parseInt(String(matchDepthInput.val()), 10) || 4);
+            const val = Math.max(1, Math.min(100, parseInt(String(matchDepthInput.val()), 10) || 4));
+            matchDepthInput.val(val);
             settings.matchDepth = val;
-            scannerSettings.matchDepth = val;
             context.saveSettingsDebounced();
             syncPromptInjection(settings);
             updateDrawerStats();
@@ -916,6 +933,26 @@ async function renderSettingsDrawer(settings) {
             }
         });
 
+        // Bind Server Sync (Multi-Device) toggle
+        const serverSyncCheckbox = $('#st_npc_server_sync');
+        serverSyncCheckbox.prop('checked', settings.serverSync !== false);
+        serverSyncCheckbox.off('change').on('change', async () => {
+            const isEnabled = serverSyncCheckbox.prop('checked');
+            settings.serverSync = isEnabled;
+            if (isEnabled) {
+                // H4: Re-merge with server when re-enabling sync rather than overwriting
+                await initDatabase();
+                updateDrawerStats();
+                syncPromptInjection(settings);
+            } else {
+                // M4: Clean up server settings data on opt-out
+                delete settings.server_db;
+                delete settings.server_tombstones;
+                delete settings.server_db_updated_at;
+                context.saveSettingsDebounced();
+            }
+        });
+
         updateDrawerStats();
         console.debug('[NPC Tracker] Settings drawer wired successfully into UI.');
     } catch (err) {
@@ -926,79 +963,81 @@ async function renderSettingsDrawer(settings) {
 /**
  * Bootstraps the NPC Tracker extension once SillyTavern is ready.
  */
-jQuery(async () => {
-    try {
-        const context = SillyTavern.getContext();
-        const settings = initExtensionSettings();
+if (typeof jQuery !== 'undefined') {
+    jQuery(async () => {
+        try {
+            const context = SillyTavern.getContext();
+            const settings = initExtensionSettings();
 
-        await initDatabase();
+            await initDatabase();
 
-        // Initialize NPC Sheet Editor modal
-        await initEditorModal(updateDrawerStats);
+            // Initialize NPC Sheet Editor modal
+            await initEditorModal(updateDrawerStats);
 
-        // Expose debug & console verification API
-        window.ST_NPC_Tracker = {
-            settings,
-            createNpc,
-            updateNpc,
-            deleteNpc,
-            getNpcById,
-            linkNpcScope,
-            unlinkNpcScope,
-            getNpcScopes,
-            setNpcScopeStatus,
-            getNpcGroups,
-            deleteGroup,
-            countNpcsInGroup,
-            getActiveContextNpcs,
-            exportJson: exportDatabaseToJson,
-            importJson: importDatabaseFromJson,
-            syncPromptInjection: () => syncPromptInjection(settings),
-            clearPromptInjection,
-            getLastInjectedPrompt,
-            renderNpcSheet,
-            openNpcEditorModal,
-            closeNpcEditorModal,
-            scanRecentChat,
-            getConnectionProfiles,
-            evaluateSettingAwareTriggers,
-            updateDrawerStats,
-        };
+            // Expose debug & console verification API
+            window.ST_NPC_Tracker = {
+                settings,
+                createNpc,
+                updateNpc,
+                deleteNpc,
+                getNpcById,
+                linkNpcScope,
+                unlinkNpcScope,
+                getNpcScopes,
+                setNpcScopeStatus,
+                getNpcGroups,
+                deleteGroup,
+                countNpcsInGroup,
+                getActiveContextNpcs,
+                exportJson: exportDatabaseToJson,
+                importJson: importDatabaseFromJson,
+                syncPromptInjection: () => syncPromptInjection(settings),
+                clearPromptInjection,
+                getLastInjectedPrompt,
+                renderNpcSheet,
+                openNpcEditorModal,
+                closeNpcEditorModal,
+                scanRecentChat,
+                getConnectionProfiles,
+                evaluateSettingAwareTriggers,
+                updateDrawerStats,
+            };
 
-        // Wire Extensions UI Drawer into SillyTavern
-        await renderSettingsDrawer(settings);
+            // Wire Extensions UI Drawer into SillyTavern
+            await renderSettingsDrawer(settings);
 
-        // Perform initial prompt synchronization
-        syncPromptInjection(settings);
+            // Perform initial prompt synchronization
+            syncPromptInjection(settings);
 
-        // Wire SillyTavern lifecycle events
-        if (context.eventSource) {
-            if (context.event_types?.CHAT_CHANGED) {
-                context.eventSource.on(context.event_types.CHAT_CHANGED, onContextChanged);
+            // Wire SillyTavern lifecycle events
+            if (context.eventSource) {
+                if (context.event_types?.CHAT_CHANGED) {
+                    context.eventSource.on(context.event_types.CHAT_CHANGED, onContextChanged);
+                }
+                if (context.event_types?.CHARACTER_PAGE_LOADED) {
+                    context.eventSource.on(context.event_types.CHARACTER_PAGE_LOADED, onContextChanged);
+                }
+                if (context.event_types?.CHARACTER_MESSAGE_RENDERED) {
+                    context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, () => onMessageReceived(true));
+                }
+                if (context.event_types?.MESSAGE_SENT) {
+                    context.eventSource.on(context.event_types.MESSAGE_SENT, () => onMessageReceived(false));
+                }
+                if (context.event_types?.GENERATION_STARTED) {
+                    context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
+                        const currentSettings = SillyTavern.getContext().extensionSettings?.[MODULE_NAME];
+                        if (currentSettings?.enabled && (currentSettings.settingAwareFilter || currentSettings.scanner?.settingAwareFilter)) {
+                            const active = getActiveContextNpcs();
+                            syncPromptInjection(currentSettings, active);
+                            updateDrawerStats(active);
+                        }
+                    });
+                }
             }
-            if (context.event_types?.CHARACTER_PAGE_LOADED) {
-                context.eventSource.on(context.event_types.CHARACTER_PAGE_LOADED, onContextChanged);
-            }
-            if (context.event_types?.CHARACTER_MESSAGE_RENDERED) {
-                context.eventSource.on(context.event_types.CHARACTER_MESSAGE_RENDERED, () => onMessageReceived(true));
-            }
-            if (context.event_types?.MESSAGE_SENT) {
-                context.eventSource.on(context.event_types.MESSAGE_SENT, () => onMessageReceived(false));
-            }
-            if (context.event_types?.GENERATION_STARTED) {
-                context.eventSource.on(context.event_types.GENERATION_STARTED, () => {
-                    const currentSettings = SillyTavern.getContext().extensionSettings?.[MODULE_NAME];
-                    if (currentSettings?.enabled && (currentSettings.settingAwareFilter || currentSettings.scanner?.settingAwareFilter)) {
-                        const active = getActiveContextNpcs();
-                        syncPromptInjection(currentSettings, active);
-                        updateDrawerStats(active);
-                    }
-                });
-            }
+
+            console.log('[NPC Tracker] Extension initialized successfully.');
+        } catch (err) {
+            console.error('[NPC Tracker] Initialization failed:', err);
         }
-
-        console.log('[NPC Tracker] Extension initialized successfully.');
-    } catch (err) {
-        console.error('[NPC Tracker] Initialization failed:', err);
-    }
-});
+    });
+}
