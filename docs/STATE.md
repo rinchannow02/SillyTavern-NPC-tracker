@@ -120,3 +120,8 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 - **L1 & L2 (Fuzzy Metadata & Bounded Salvage):** Created `getMetadataValue` with precomputed `KNOWN_METADATA_KEYS_SET` to extract casing/delimiter variations (e.g. `groupName`, `Location`) without dropping fields. Bounded the salvage engine to a maximum of 5 dynamic custom blocks and capped text length to 500 characters.
 - **L3 & L4 (Group Location Branches & Depth Clamping):** Prevented parenthetical location branches (e.g. `(Tokyo Branch)`) from being misidentified as personal job titles, appending them cleanly as subgroups. Clamped `matchDepth` between 1 and 100 in both UI input handlers and injection triggers.
 - **Verification:** 45/45 unit and integration tests passing via `node --test test/*.test.mjs`.
+
+## Preset Cleanup (2026-10-25)
+- **Redundant Preset JSON Deletion:** Removed leftover `.json` preset files (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`) from `src/templates/presets/`. The codebase migrated to ES modules (`.js`) under M1 to avoid browser JSON import attribute errors; the duplicate `.json` files are no longer needed at runtime.
+- **Test Suite Update:** Updated `test/preset.test.mjs` to dynamically import and validate the `.js` preset modules directly. 45/45 tests passing.
+

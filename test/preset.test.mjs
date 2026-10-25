@@ -132,18 +132,20 @@ test('validatePreset - sanitizes dangerous prototype block IDs (C3)', () => {
     assert.equal(validated.blocks[2].id, 'normal');
 });
 
-test('individual preset JSON files - exist in presets directory and match valid schemas', async () => {
+test('individual preset JS files - exist in presets directory and export valid schemas', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
 
-    const presetFiles = ['classic.json', 'slice_of_life.json', 'adventure_fantasy.json', 'rpg_scifi.json'];
+    const presetFiles = ['classic.js', 'slice_of_life.js', 'adventure_fantasy.js', 'rpg_scifi.js'];
     for (const filename of presetFiles) {
         const filePath = path.resolve('src/templates/presets', filename);
         assert.ok(fs.existsSync(filePath), `Preset file ${filename} must exist`);
 
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        const validated = validatePreset(parsed);
+        const fileUrl = pathToFileURL(filePath).href;
+        const module = await import(fileUrl);
+        const preset = module.default;
+        const validated = validatePreset(preset);
 
         assert.ok(validated.id);
         assert.ok(validated.name);
