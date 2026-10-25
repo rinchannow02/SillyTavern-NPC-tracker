@@ -831,10 +831,14 @@ export async function importDatabaseFromJson(jsonString) {
     }
 
     let npcsImported = 0;
+    const now = Date.now();
     for (const n of payload.npcs) {
         // Only the exporter's format (blocks_json + npc_links) is accepted; both are validated above.
         const parsedBlocks = n.blocks_json ? parseBlocks(n.blocks_json) : copyBlocks(DEFAULT_BLOCKS);
         const importedLinks = linksByNpcId.get(n.id) || [];
+
+        // Ensure restored NPC is not pruned by an existing deletion tombstone
+        delete tombstones[n.id];
 
         const existingIdx = npcs.findIndex((item) => item.id === n.id);
         const npcObj = {
@@ -847,8 +851,8 @@ export async function importDatabaseFromJson(jsonString) {
             blocks: parsedBlocks,
             raw_content: n.raw_content || '',
             links: importedLinks,
-            created_at: n.created_at || Date.now(),
-            updated_at: n.updated_at || Date.now(),
+            created_at: n.created_at || now,
+            updated_at: Math.max(n.updated_at || 0, now),
         };
 
         if (existingIdx !== -1) {
@@ -857,6 +861,15 @@ export async function importDatabaseFromJson(jsonString) {
             npcs.push(npcObj);
         }
         npcsImported++;
+    }
+
+    // Clean any matching tombstones in server settings if present
+    const context = typeof SillyTavern !== 'undefined' ? SillyTavern.getContext?.() : null;
+    const settings = context?.extensionSettings?.[MODULE_NAME];
+    if (settings?.server_tombstones) {
+        for (const n of payload.npcs) {
+            delete settings.server_tombstones[n.id];
+        }
     }
 
     await saveDatabaseNow();

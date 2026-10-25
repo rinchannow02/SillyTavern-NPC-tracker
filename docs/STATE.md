@@ -124,4 +124,6 @@ All P0 (Security) and P1 (Correctness) items from `AUDIT.md` have been implement
 ## Preset Cleanup (2026-10-25)
 - **Redundant Preset JSON Deletion:** Removed leftover `.json` preset files (`classic.json`, `slice_of_life.json`, `adventure_fantasy.json`, `rpg_scifi.json`) from `src/templates/presets/`. The codebase migrated to ES modules (`.js`) under M1 to avoid browser JSON import attribute errors; the duplicate `.json` files are no longer needed at runtime.
 - **Test Suite Update:** Updated `test/preset.test.mjs` to dynamically import and validate the `.js` preset modules directly. 45/45 tests passing.
+- **Import Tombstone Pruning:** Fixed `importDatabaseFromJson` in `src/db/sqlite-store.js` to clear matching deletion tombstones from local and server settings and ensure `updated_at >= Date.now()` so restored backup records are never pruned as deleted by stale tombstones.
+
 
